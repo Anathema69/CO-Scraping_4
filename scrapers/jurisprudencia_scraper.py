@@ -1,4 +1,4 @@
-# scraping.py - Modificado para recibir parámetros externos
+# scrapers/jurisprudencia_scraper.py - Movido de scraping.py sin cambios
 import requests
 from urllib.parse import unquote
 import re
@@ -343,19 +343,19 @@ class JudicialScraper:
     def format_search_params(self, search_params, viewstate):
         """Formatea los parámetros de búsqueda con el ViewState real"""
         formatted_params = search_params.copy()
-        
+
         # Actualizar ViewState real
         formatted_params['javax.faces.ViewState'] = viewstate
-        
+
         # Formatear campos especiales que necesitan comillas
         if 'searchForm:tipoInput' in formatted_params and formatted_params['searchForm:tipoInput']:
             tipo_value = formatted_params['searchForm:tipoInput']
             formatted_params['searchForm:tipoInput'] = f'"{tipo_value}" '
-            
+
         if 'searchForm:temaInput' in formatted_params and formatted_params['searchForm:temaInput']:
             tema_value = formatted_params['searchForm:temaInput']
             formatted_params['searchForm:temaInput'] = f'"{tema_value}" '
-        
+
         return formatted_params
 
     def search_and_download_with_params(self, search_params, download_pdfs=True,
