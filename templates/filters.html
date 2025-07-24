@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Buscador de Jurisprudencia</title>
+
+  <!-- Flatpickr CSS -->
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css"
+  />
+  <!-- Tom Select CSS -->
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/tom-select/dist/css/tom-select.default.min.css"
+  />
+  <!-- Tus estilos -->
+  <link rel="stylesheet" href="../static/css/style.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h1>Buscador de Jurisprudencia</h1>
+
+      <form id="search-form">
+
+        <!-- 1) Salas disponibles -->
+        <div class="field">
+          <label for="sala-select">Salas Disponibles</label>
+          <select
+            id="sala-select"
+            name="salas[]"
+            multiple
+            placeholder="Seleccione sala(s)…"
+          >
+            <optgroup label="Civil, Familia y Agraria">
+              <option value="SALA DE CASACIÓN CIVIL">
+                SALA DE CASACIÓN CIVIL
+              </option>
+            </optgroup>
+            <optgroup label="Laboral">
+              <option value="SALA DE DESCONGESTIÓN LABORAL N.º 1">
+                SALA DE DESCONGESTIÓN LABORAL N.º 1
+              </option>
+              <option value="SALA DE DESCONGESTIÓN LABORAL N.º 2">
+                SALA DE DESCONGESTIÓN LABORAL N.º 2
+              </option>
+              <option value="SALA DE DESCONGESTIÓN LABORAL N.º 3">
+                SALA DE DESCONGESTIÓN LABORAL N.º 3
+              </option>
+              <option value="SALA DE DESCONGESTIÓN LABORAL N.º 4">
+                SALA DE DESCONGESTIÓN LABORAL N.º 4
+              </option>
+              <option value="SALA DE CASACIÓN LABORAL">
+                SALA DE CASACIÓN LABORAL
+              </option>
+            </optgroup>
+            <optgroup label="Penal">
+              <option value="Sala Especial de Primera Instancia">
+                Sala Especial de Primera Instancia
+              </option>
+              <option value="Sala Especial de Instrucción">
+                Sala Especial de Instrucción
+              </option>
+              <option value="Sala de Casación Penal">
+                Sala de Casación Penal
+              </option>
+            </optgroup>
+            <optgroup label="Plena">
+              <option value="SALA PLENA">
+                SALA PLENA
+              </option>
+            </optgroup>
+          </select>
+        </div>
+
+        <!-- 2+3+4) Ámbito, Asunto y Publicación juntos en 3 columnas -->
+        <div class="grid three-col">
+
+          <!-- Ámbito Temático -->
+          <div class="field checkbox-group">
+            <label class="group-title">Ámbito Temático</label>
+            <label>
+              <input type="checkbox" name="ambito[]" value="CONSTITUCIONAL">
+              <span class="checkbox-custom"></span>
+              Constitucional
+            </label>
+            <label>
+              <input type="checkbox" name="ambito[]" value="NEGOCIOS_GENERALES">
+              <span class="checkbox-custom"></span>
+              Negocios Generales
+            </label>
+          </div>
+
+          <!-- Tipo de Asunto -->
+          <div class="field radio-group">
+            <label class="group-title">Tipo de Asunto</label>
+            <label>
+              <input type="radio" name="asunto" value="ASUNTOS DE SALA">
+              <span class="radio-custom"></span>
+              Asuntos de Sala
+            </label>
+            <label>
+              <input type="radio" name="asunto" value="TUTELA">
+              <span class="radio-custom"></span>
+              Tutelas
+            </label>
+            <label>
+              <input type="radio" name="asunto" value="TODO" checked>
+              <span class="radio-custom"></span>
+              Todos
+            </label>
+          </div>
+
+          <!-- Publicación -->
+          <div class="field radio-group">
+            <label class="group-title">Publicación</label>
+            <label>
+              <input type="radio" name="publicacion" value="RELEVANTE">
+              <span class="radio-custom"></span>
+              Relevantes
+            </label>
+            <label>
+              <input type="radio" name="publicacion" value="PUBLICADA">
+              <span class="radio-custom"></span>
+              Gaceta Judicial
+            </label>
+            <label>
+              <input type="radio" name="publicacion" value="" checked>
+              <span class="radio-custom"></span>
+              Todas
+            </label>
+          </div>
+
+        </div><!-- /.three-col -->
+
+        <!-- 5) Rango de fechas -->
+        <div class="grid">
+          <div class="field">
+            <label for="start-date">Fecha desde</label>
+            <input type="text" id="start-date" name="start_date" required />
+          </div>
+          <div class="field">
+            <label for="end-date">Fecha hasta</label>
+            <input type="text" id="end-date" name="end_date" required />
+          </div>
+        </div>
+
+        <!-- 6) Tipo de Providencia -->
+        <div class="field">
+          <label for="providencia-select">Tipo de Providencia</label>
+          <select id="providencia-select" name="providencia" required>
+            <option value="AUTO">AUTO</option>
+            <option value="AUTO INTERLOCUTORIO">AUTO INTERLOCUTORIO</option>
+            <option value="AUTO SUSTANCIACIÓN">AUTO SUSTANCIACIÓN</option>
+            <option value="CONCEPTO">CONCEPTO</option>
+            <option value="MIXTA">MIXTA</option>
+            <option value="OTROS">OTROS</option>
+            <option value="PUBLICACIÓN ESPECIALIZADA">PUBLICACIÓN ESPECIALIZADA</option>
+            <option value="SENTENCIA" selected>SENTENCIA</option>
+            <option value="SENTENCIA COMPLEMENTARIA">SENTENCIA COMPLEMENTARIA</option>
+            <option value="SENTENCIA DE INSTANCIA">SENTENCIA DE INSTANCIA</option>
+            <option value="SENTENCIA SUSTITUTIVA">SENTENCIA SUSTITUTIVA</option>
+          </select>
+        </div>
+
+        <!-- 7) Campo de tema libre -->
+        <div class="field">
+          <label for="tema-input">Tema (opcional)</label>
+          <input type="text" id="tema-input" name="tema" placeholder="Ej: Derecho laboral, Responsabilidad civil...">
+        </div>
+
+        <!-- Botón de búsqueda -->
+        <button type="button" id="btn-search" class="btn-submit">
+          Buscar Jurisprudencia
+        </button>
+      </form>
+
+      <!-- Panel de resultados -->
+      <div id="results-panel" style="display: none;">
+        <h3>Estado del Proceso</h3>
+        <div id="status-content"></div>
+        <div style="margin-top: 1rem;">
+          <button type="button" id="btn-check-status" class="btn-secondary">
+            Actualizar Estado
+          </button>
+          <button type="button" id="btn-view-logs" class="btn-secondary">
+            Ver Logs
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loader overlay -->
+  <div id="loader-overlay" class="loader-overlay" style="display: none;">
+    <div class="loader-content">
+      <div class="spinner"></div>
+      <p id="loader-text">Procesando...</p>
+    </div>
+  </div>
+
+  <!-- JS libs -->
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tom-select/dist/js/tom-select.complete.min.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // Configurar fechas
+      const hoy = new Date();
+      const haceUnAno = new Date();
+      haceUnAno.setFullYear(haceUnAno.getFullYear() - 1);
+
+      flatpickr('#start-date', {
+        dateFormat: 'd/m/Y',
+        defaultDate: haceUnAno,
+        maxDate: hoy
+      });
+      flatpickr('#end-date', {
+        dateFormat: 'd/m/Y',
+        defaultDate: hoy,
+        maxDate: hoy
+      });
+
+      // Configurar selects
+      new TomSelect('#sala-select', {
+        plugins: ['remove_button'],
+        maxItems: null,
+        dropdownClass: 'ts-dropdown expand-right',
+        placeholder: 'Seleccione sala(s)…'
+      });
+
+      new TomSelect('#providencia-select', {
+        maxItems: 1,
+        placeholder: 'Seleccione…'
+      });
+
+      // Variables globales
+      let currentTimestamp = null;
+
+      // Función para mostrar loader
+      function showLoader(text = 'Procesando...') {
+        document.getElementById('loader-text').textContent = text;
+        document.getElementById('loader-overlay').style.display = 'flex';
+      }
+
+      // Función para ocultar loader
+      function hideLoader() {
+        document.getElementById('loader-overlay').style.display = 'none';
+      }
+
+      // Función para serializar formulario
+      function serializeForm() {
+        const form = document.getElementById('search-form');
+        const formData = new FormData(form);
+        return formData;
+      }
+
+      // Botón principal de búsqueda
+      document.getElementById('btn-search').addEventListener('click', async () => {
+        showLoader('Iniciando búsqueda de jurisprudencia...');
+
+        try {
+          const formData = serializeForm();
+          const response = await fetch('/start_scraping', {
+            method: 'POST',
+            body: formData
+          });
+
+          const result = await response.json();
+
+          if (response.ok) {
+            currentTimestamp = result.timestamp;
+            document.getElementById('results-panel').style.display = 'block';
+            updateStatusDisplay(result);
+
+            // Empezar a consultar el estado cada 10 segundos
+            setInterval(() => {
+              if (currentTimestamp) {
+                checkStatus();
+              }
+            }, 10000);
+
+          } else {
+            alert('Error: ' + result.message);
+          }
+        } catch (error) {
+          alert('Error: ' + error.message);
+        }
+
+        hideLoader();
+      });
+
+      // Función para consultar estado
+      async function checkStatus() {
+        if (!currentTimestamp) return;
+
+        try {
+          const response = await fetch(`/scraping_status/${currentTimestamp}`);
+          const result = await response.json();
+
+          if (response.ok) {
+            updateStatusDisplay(result);
+          }
+        } catch (error) {
+          console.error('Error consultando estado:', error);
+        }
+      }
+
+      // Función para actualizar display de estado
+      function updateStatusDisplay(data) {
+        const content = document.getElementById('status-content');
+
+        if (data.manifest) {
+          const manifest = data.manifest;
+          let html = `
+            <div class="status-info">
+              <p><strong>Timestamp:</strong> ${manifest.timestamp}</p>
+              <p><strong>Estado:</strong> <span class="status-${manifest.estado}">${manifest.estado}</span></p>
+              <p><strong>Fecha inicio:</strong> ${new Date(manifest.fecha_busqueda).toLocaleString()}</p>
+              <p><strong>Total esperados:</strong> ${manifest.total_resultados_esperados}</p>
+            </div>
+          `;
+
+          if (data.final_report) {
+            const report = data.final_report.resumen;
+            html += `
+              <div class="final-report">
+                <h4>Reporte Final</h4>
+                <p><strong>Total recolectados:</strong> ${report.total_recolectados}</p>
+                <p><strong>Total descargados:</strong> ${report.total_descargados}</p>
+                <p><strong>Total errores:</strong> ${report.total_errores}</p>
+                <p><strong>Tasa de éxito:</strong> ${report.tasa_exito}</p>
+              </div>
+            `;
+          }
+
+          content.innerHTML = html;
+        } else {
+          content.innerHTML = `
+            <div class="status-info">
+              <p><strong>Mensaje:</strong> ${data.message || 'Procesando...'}</p>
+            </div>
+          `;
+        }
+      }
+
+      // Botón manual para consultar estado
+      document.getElementById('btn-check-status').addEventListener('click', checkStatus);
+
+      // Botón para ver logs
+      document.getElementById('btn-view-logs').addEventListener('click', () => {
+        if (currentTimestamp) {
+          const logUrl = `/logs/${currentTimestamp}/descarga.log`;
+          window.open(logUrl, '_blank');
+        } else {
+          alert('No hay proceso activo');
+        }
+      });
+    });
+  </script>
+</body>
+</html>
