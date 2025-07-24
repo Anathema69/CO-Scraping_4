@@ -1,238 +1,235 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Buscador de Jurisprudencia</title>
+{% extends "base.html" %}
 
-  <!-- External CSS -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select/dist/css/tom-select.default.min.css" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+{% block title %}Jurisprudencia - Sistema de Scraping Judicial{% endblock %}
 
-  <!-- Custom CSS -->
-  <link rel="stylesheet" href="../static/css/variables.css" />
-  <link rel="stylesheet" href="../static/css/base.css" />
-  <link rel="stylesheet" href="../static/css/components.css" />
-  <link rel="stylesheet" href="../static/css/tom-select.css" />
-</head>
+{% block nav_links %}
+{{ super() }}
+<a href="{{ url_for('jurisprudencia_filters') }}" class="nav-link active">
+  <i class="fas fa-gavel"></i>
+  Jurisprudencia
+</a>
+{% endblock %}
 
-<body>
-  <div class="container">
-    <!-- Header -->
-    <div class="header">
-      <h1><i class="fas fa-gavel"></i> Buscador de Jurisprudencia</h1>
-      <p>Sistema avanzado de consulta y descarga de documentos judiciales</p>
-    </div>
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select/dist/css/tom-select.default.min.css" />
+<link rel="stylesheet" href="{{ url_for('static', filename='css/tom-select.css') }}" />
+{% endblock %}
 
-    <form id="search-form">
-      <!-- Sección 1: Configuración de Salas -->
-      <div class="card">
-        <div class="card-header">
-          <i class="fas fa-building"></i>
-          <h3>Selección de Salas</h3>
-        </div>
-        <div class="form-grid">
-          <div class="field">
-            <label class="field-label" for="sala-select">
-              <i class="fas fa-list"></i>
-              Salas Disponibles
-            </label>
-            <select id="sala-select" name="salas[]" multiple placeholder="Seleccione sala(s)…">
-              <optgroup label="Civil, Familia y Agraria">
-                <option value="SALA DE CASACIÓN CIVIL">SALA DE CASACIÓN CIVIL</option>
-              </optgroup>
-              <optgroup label="Laboral">
-                <option value="SALA DE DESCONGESTIÓN LABORAL N.º 1">SALA DE DESCONGESTIÓN LABORAL N.º 1</option>
-                <option value="SALA DE DESCONGESTIÓN LABORAL N.º 2">SALA DE DESCONGESTIÓN LABORAL N.º 2</option>
-                <option value="SALA DE DESCONGESTIÓN LABORAL N.º 3">SALA DE DESCONGESTIÓN LABORAL N.º 3</option>
-                <option value="SALA DE DESCONGESTIÓN LABORAL N.º 4">SALA DE DESCONGESTIÓN LABORAL N.º 4</option>
-                <option value="SALA DE CASACIÓN LABORAL">SALA DE CASACIÓN LABORAL</option>
-              </optgroup>
-              <optgroup label="Penal">
-                <option value="Sala Especial de Primera Instancia">Sala Especial de Primera Instancia</option>
-                <option value="Sala Especial de Instrucción">Sala Especial de Instrucción</option>
-                <option value="Sala de Casación Penal">Sala de Casación Penal</option>
-              </optgroup>
-              <optgroup label="Plena">
-                <option value="SALA PLENA">SALA PLENA</option>
-              </optgroup>
-            </select>
-          </div>
-        </div>
-      </div>
+{% block content %}
+<div class="container">
+  <!-- Header -->
+  <div class="header">
+    <h1><i class="fas fa-gavel"></i> Buscador de Jurisprudencia</h1>
+    <p>Sistema avanzado de consulta y descarga de documentos judiciales</p>
+  </div>
 
-      <!-- Sección 2: Rango de Fechas -->
-      <div class="card">
-        <div class="card-header">
-          <i class="fas fa-calendar-alt"></i>
-          <h3>Período de Búsqueda</h3>
-        </div>
-        <div class="form-grid two-col">
-          <div class="field">
-            <label class="field-label" for="start-date">
-              <i class="fas fa-calendar-plus"></i>
-              Fecha desde
-            </label>
-            <input type="text" id="start-date" name="start_date" required>
-          </div>
-          <div class="field">
-            <label class="field-label" for="end-date">
-              <i class="fas fa-calendar-minus"></i>
-              Fecha hasta
-            </label>
-            <input type="text" id="end-date" name="end_date" required>
-          </div>
-        </div>
-      </div>
-
-      <!-- Sección 3: Criterios de Clasificación -->
-      <div class="card">
-        <div class="card-header">
-          <i class="fas fa-tags"></i>
-          <h3>Criterios de Clasificación</h3>
-        </div>
-        <div class="form-grid three-col">
-          <!-- Ámbito Temático -->
-          <div class="field">
-            <label class="field-label">
-              <i class="fas fa-sitemap"></i>
-              Ámbito Temático
-            </label>
-            <div class="choice-group">
-              <div class="choice-item">
-                <input type="checkbox" id="ambito-const" name="ambito[]" value="CONSTITUCIONAL">
-                <label for="ambito-const">Constitucional</label>
-              </div>
-              <div class="choice-item">
-                <input type="checkbox" id="ambito-neg" name="ambito[]" value="NEGOCIOS_GENERALES">
-                <label for="ambito-neg">Negocios Generales</label>
-              </div>
-            </div>
-          </div>
-
-          <!-- Tipo de Asunto -->
-          <div class="field">
-            <label class="field-label">
-              <i class="fas fa-gavel"></i>
-              Tipo de Asunto
-            </label>
-            <div class="choice-group">
-              <div class="choice-item">
-                <input type="radio" id="asunto-sala" name="asunto" value="ASUNTOS DE SALA">
-                <label for="asunto-sala">Asuntos de Sala</label>
-              </div>
-              <div class="choice-item">
-                <input type="radio" id="asunto-tutela" name="asunto" value="TUTELA">
-                <label for="asunto-tutela">Tutelas</label>
-              </div>
-              <div class="choice-item">
-                <input type="radio" id="asunto-todo" name="asunto" value="TODO" checked>
-                <label for="asunto-todo">Todos</label>
-              </div>
-            </div>
-          </div>
-
-          <!-- Publicación -->
-          <div class="field">
-            <label class="field-label">
-              <i class="fas fa-newspaper"></i>
-              Publicación
-            </label>
-            <div class="choice-group">
-              <div class="choice-item">
-                <input type="radio" id="pub-relevante" name="publicacion" value="RELEVANTE">
-                <label for="pub-relevante">Relevantes</label>
-              </div>
-              <div class="choice-item">
-                <input type="radio" id="pub-gaceta" name="publicacion" value="PUBLICADA">
-                <label for="pub-gaceta">Gaceta Judicial</label>
-              </div>
-              <div class="choice-item">
-                <input type="radio" id="pub-todas" name="publicacion" value="" checked>
-                <label for="pub-todas">Todas</label>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Sección 4: Criterios Específicos -->
-      <div class="card">
-        <div class="card-header">
-          <i class="fas fa-filter"></i>
-          <h3>Criterios Específicos</h3>
-        </div>
-        <div class="form-grid two-col">
-          <div class="field">
-            <label class="field-label" for="providencia-select">
-              <i class="fas fa-file-alt"></i>
-              Tipo de Providencia
-            </label>
-            <select id="providencia-select" name="providencia" required>
-              <option value="AUTO">AUTO</option>
-              <option value="AUTO INTERLOCUTORIO">AUTO INTERLOCUTORIO</option>
-              <option value="AUTO SUSTANCIACIÓN">AUTO SUSTANCIACIÓN</option>
-              <option value="CONCEPTO">CONCEPTO</option>
-              <option value="MIXTA">MIXTA</option>
-              <option value="OTROS">OTROS</option>
-              <option value="PUBLICACIÓN ESPECIALIZADA">PUBLICACIÓN ESPECIALIZADA</option>
-              <option value="SENTENCIA" selected>SENTENCIA</option>
-              <option value="SENTENCIA COMPLEMENTARIA">SENTENCIA COMPLEMENTARIA</option>
-              <option value="SENTENCIA DE INSTANCIA">SENTENCIA DE INSTANCIA</option>
-              <option value="SENTENCIA SUSTITUTIVA">SENTENCIA SUSTITUTIVA</option>
-            </select>
-          </div>
-          <div class="field">
-            <label class="field-label" for="tema-input">
-              <i class="fas fa-search"></i>
-              Tema (opcional)
-            </label>
-            <input type="text" id="tema-input" name="tema" placeholder="Ej: Derecho laboral, Responsabilidad civil...">
-          </div>
-        </div>
-      </div>
-
-      <!-- Botón de Búsqueda -->
-      <button type="button" id="btn-search" class="btn btn-primary btn-full">
-        <i class="fas fa-search"></i>
-        Iniciar Búsqueda de Jurisprudencia
-      </button>
-    </form>
-
-    <!-- Panel de Resultados -->
-    <div id="results-panel" class="results-panel" style="display: none;">
+  <form id="search-form">
+    <!-- Sección 1: Configuración de Salas -->
+    <div class="card">
       <div class="card-header">
-        <i class="fas fa-chart-line"></i>
-        <h3>Estado del Proceso</h3>
+        <i class="fas fa-building"></i>
+        <h3>Selección de Salas</h3>
       </div>
-      <div id="status-content"></div>
-      <div style="margin-top: 1.5rem; display: flex; gap: 1rem;">
-        <button type="button" id="btn-check-status" class="btn btn-secondary">
-          <i class="fas fa-sync-alt"></i>
-          Actualizar Estado
-        </button>
-        <button type="button" id="btn-view-logs" class="btn btn-secondary">
-          <i class="fas fa-file-code"></i>
-          Ver Logs
-        </button>
+      <div class="form-grid">
+        <div class="field">
+          <label class="field-label" for="sala-select">
+            <i class="fas fa-list"></i>
+            Salas Disponibles
+          </label>
+          <select id="sala-select" name="salas[]" multiple placeholder="Seleccione sala(s)…">
+            <optgroup label="Civil, Familia y Agraria">
+              <option value="SALA DE CASACIÓN CIVIL">SALA DE CASACIÓN CIVIL</option>
+            </optgroup>
+            <optgroup label="Laboral">
+              <option value="SALA DE DESCONGESTIÓN LABORAL N.º 1">SALA DE DESCONGESTIÓN LABORAL N.º 1</option>
+              <option value="SALA DE DESCONGESTIÓN LABORAL N.º 2">SALA DE DESCONGESTIÓN LABORAL N.º 2</option>
+              <option value="SALA DE DESCONGESTIÓN LABORAL N.º 3">SALA DE DESCONGESTIÓN LABORAL N.º 3</option>
+              <option value="SALA DE DESCONGESTIÓN LABORAL N.º 4">SALA DE DESCONGESTIÓN LABORAL N.º 4</option>
+              <option value="SALA DE CASACIÓN LABORAL">SALA DE CASACIÓN LABORAL</option>
+            </optgroup>
+            <optgroup label="Penal">
+              <option value="Sala Especial de Primera Instancia">Sala Especial de Primera Instancia</option>
+              <option value="Sala Especial de Instrucción">Sala Especial de Instrucción</option>
+              <option value="Sala de Casación Penal">Sala de Casación Penal</option>
+            </optgroup>
+            <optgroup label="Plena">
+              <option value="SALA PLENA">SALA PLENA</option>
+            </optgroup>
+          </select>
+        </div>
       </div>
     </div>
-  </div>
 
-  <!-- Loader -->
-  <div id="loader-overlay" class="loader-overlay" style="display: none;">
-    <div class="loader-content">
-      <div class="spinner"></div>
-      <p id="loader-text">Procesando...</p>
+    <!-- Sección 2: Rango de Fechas -->
+    <div class="card">
+      <div class="card-header">
+        <i class="fas fa-calendar-alt"></i>
+        <h3>Período de Búsqueda</h3>
+      </div>
+      <div class="form-grid two-col">
+        <div class="field">
+          <label class="field-label" for="start-date">
+            <i class="fas fa-calendar-plus"></i>
+            Fecha desde
+          </label>
+          <input type="text" id="start-date" name="start_date" required>
+        </div>
+        <div class="field">
+          <label class="field-label" for="end-date">
+            <i class="fas fa-calendar-minus"></i>
+            Fecha hasta
+          </label>
+          <input type="text" id="end-date" name="end_date" required>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sección 3: Criterios de Clasificación -->
+    <div class="card">
+      <div class="card-header">
+        <i class="fas fa-tags"></i>
+        <h3>Criterios de Clasificación</h3>
+      </div>
+      <div class="form-grid three-col">
+        <!-- Ámbito Temático -->
+        <div class="field">
+          <label class="field-label">
+            <i class="fas fa-sitemap"></i>
+            Ámbito Temático
+          </label>
+          <div class="choice-group">
+            <div class="choice-item">
+              <input type="checkbox" id="ambito-const" name="ambito[]" value="CONSTITUCIONAL">
+              <label for="ambito-const">Constitucional</label>
+            </div>
+            <div class="choice-item">
+              <input type="checkbox" id="ambito-neg" name="ambito[]" value="NEGOCIOS_GENERALES">
+              <label for="ambito-neg">Negocios Generales</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tipo de Asunto -->
+        <div class="field">
+          <label class="field-label">
+            <i class="fas fa-gavel"></i>
+            Tipo de Asunto
+          </label>
+          <div class="choice-group">
+            <div class="choice-item">
+              <input type="radio" id="asunto-sala" name="asunto" value="ASUNTOS DE SALA">
+              <label for="asunto-sala">Asuntos de Sala</label>
+            </div>
+            <div class="choice-item">
+              <input type="radio" id="asunto-tutela" name="asunto" value="TUTELA">
+              <label for="asunto-tutela">Tutelas</label>
+            </div>
+            <div class="choice-item">
+              <input type="radio" id="asunto-todo" name="asunto" value="TODO" checked>
+              <label for="asunto-todo">Todos</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Publicación -->
+        <div class="field">
+          <label class="field-label">
+            <i class="fas fa-newspaper"></i>
+            Publicación
+          </label>
+          <div class="choice-group">
+            <div class="choice-item">
+              <input type="radio" id="pub-relevante" name="publicacion" value="RELEVANTE">
+              <label for="pub-relevante">Relevantes</label>
+            </div>
+            <div class="choice-item">
+              <input type="radio" id="pub-gaceta" name="publicacion" value="PUBLICADA">
+              <label for="pub-gaceta">Gaceta Judicial</label>
+            </div>
+            <div class="choice-item">
+              <input type="radio" id="pub-todas" name="publicacion" value="" checked>
+              <label for="pub-todas">Todas</label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sección 4: Criterios Específicos -->
+    <div class="card">
+      <div class="card-header">
+        <i class="fas fa-filter"></i>
+        <h3>Criterios Específicos</h3>
+      </div>
+      <div class="form-grid two-col">
+        <div class="field">
+          <label class="field-label" for="providencia-select">
+            <i class="fas fa-file-alt"></i>
+            Tipo de Providencia
+          </label>
+          <select id="providencia-select" name="providencia" required>
+            <option value="AUTO">AUTO</option>
+            <option value="AUTO INTERLOCUTORIO">AUTO INTERLOCUTORIO</option>
+            <option value="AUTO SUSTANCIACIÓN">AUTO SUSTANCIACIÓN</option>
+            <option value="CONCEPTO">CONCEPTO</option>
+            <option value="MIXTA">MIXTA</option>
+            <option value="OTROS">OTROS</option>
+            <option value="PUBLICACIÓN ESPECIALIZADA">PUBLICACIÓN ESPECIALIZADA</option>
+            <option value="SENTENCIA" selected>SENTENCIA</option>
+            <option value="SENTENCIA COMPLEMENTARIA">SENTENCIA COMPLEMENTARIA</option>
+            <option value="SENTENCIA DE INSTANCIA">SENTENCIA DE INSTANCIA</option>
+            <option value="SENTENCIA SUSTITUTIVA">SENTENCIA SUSTITUTIVA</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label" for="tema-input">
+            <i class="fas fa-search"></i>
+            Tema (opcional)
+          </label>
+          <input type="text" id="tema-input" name="tema" placeholder="Ej: Derecho laboral, Responsabilidad civil...">
+        </div>
+      </div>
+    </div>
+
+    <!-- Botón de Búsqueda -->
+    <button type="button" id="btn-search" class="btn btn-primary btn-full">
+      <i class="fas fa-search"></i>
+      Iniciar Búsqueda de Jurisprudencia
+    </button>
+  </form>
+
+  <!-- Panel de Resultados -->
+  <div id="results-panel" class="results-panel" style="display: none;">
+    <div class="card-header">
+      <i class="fas fa-chart-line"></i>
+      <h3>Estado del Proceso</h3>
+    </div>
+    <div id="status-content"></div>
+    <div style="margin-top: 1.5rem; display: flex; gap: 1rem;">
+      <button type="button" id="btn-check-status" class="btn btn-secondary">
+        <i class="fas fa-sync-alt"></i>
+        Actualizar Estado
+      </button>
+      <button type="button" id="btn-view-logs" class="btn btn-secondary">
+        <i class="fas fa-file-code"></i>
+        Ver Logs
+      </button>
     </div>
   </div>
+</div>
 
-  <!-- External Scripts -->
-  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-  <script src="https://cdn.jsdelivr.net/npm/tom-select/dist/js/tom-select.complete.min.js"></script>
+<!-- Loader -->
+<div id="loader-overlay" class="loader-overlay" style="display: none;">
+  <div class="loader-content">
+    <div class="spinner"></div>
+    <p id="loader-text">Procesando...</p>
+  </div>
+</div>
+{% endblock %}
 
-  <!-- Custom Scripts -->
-  <script src="../static/js/jurisprudencia.js"></script>
-</body>
-</html>
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://cdn.jsdelivr.net/npm/tom-select/dist/js/tom-select.complete.min.js"></script>
+<script src="{{ url_for('static', filename='js/jurisprudencia.js') }}"></script>
+{% endblock %}

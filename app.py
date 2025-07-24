@@ -1,4 +1,4 @@
-# app.py
+# app.py - Con nuevas rutas para dashboard
 import threading
 import webbrowser
 import json
@@ -16,11 +16,16 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# NOTA: La función build_search_params() ya no está aquí,
-# se movió a utils/form_helpers.py sin cambios
 
 @app.route('/')
-def index():
+def dashboard():
+    """Dashboard principal - página de inicio"""
+    return render_template('index.html')
+
+
+@app.route('/jurisprudencia')
+def jurisprudencia_filters():
+    """Página de filtros de jurisprudencia"""
     return render_template('jurisprudencia/filters.html')
 
 
