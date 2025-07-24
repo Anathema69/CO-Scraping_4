@@ -14,6 +14,131 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select/dist/css/tom-select.default.min.css" />
 <link rel="stylesheet" href="{{ url_for('static', filename='css/tom-select.css') }}" />
+
+<style>
+  /* Estilos adicionales para los nuevos botones */
+  .btn-loading {
+    opacity: 0.7;
+    pointer-events: none;
+  }
+
+  .btn-danger {
+    background: linear-gradient(135deg, var(--error), #dc2626);
+    color: white;
+    box-shadow: var(--shadow);
+  }
+
+  .btn-danger:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .btn-info {
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+    color: white;
+    box-shadow: var(--shadow);
+  }
+
+  .btn-info:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+  }
+
+  /* Botones flotantes en la esquina */
+  .floating-controls {
+    position: fixed;
+    top: 100px;
+    right: 20px;
+    z-index: 999;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .floating-controls .btn {
+    min-width: auto;
+    padding: 0.75rem;
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow-lg);
+    transition: all 0.3s ease;
+  }
+
+  .floating-controls .btn:hover {
+    transform: scale(1.1);
+  }
+
+  .floating-controls .btn i {
+    margin: 0;
+  }
+
+  /* Tooltip para botones flotantes */
+  .floating-controls .btn {
+    position: relative;
+  }
+
+  .floating-controls .btn::before {
+    content: attr(data-tooltip);
+    position: absolute;
+    right: 60px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow);
+  }
+
+  .floating-controls .btn:hover::before {
+    opacity: 1;
+  }
+
+  .action-buttons {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1.5rem;
+    flex-wrap: wrap;
+  }
+
+  .action-buttons .btn {
+    flex: 1;
+    min-width: 150px;
+  }
+
+  @media (max-width: 768px) {
+    .floating-controls {
+      position: relative;
+      top: auto;
+      right: auto;
+      flex-direction: row;
+      justify-content: center;
+      margin: 1rem 0;
+    }
+
+    .floating-controls .btn::before {
+      display: none;
+    }
+
+    .action-buttons {
+      flex-direction: column;
+    }
+
+    .action-buttons .btn {
+      width: 100%;
+    }
+  }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -22,6 +147,18 @@
   <div class="header">
     <h1><i class="fas fa-gavel"></i> Buscador de Jurisprudencia</h1>
     <p>Sistema avanzado de consulta y descarga de documentos judiciales</p>
+  </div>
+
+  <!-- Controles flotantes -->
+  <div class="floating-controls">
+    <button type="button" id="btn-cancel-search" class="btn btn-danger" style="display: none;"
+            data-tooltip="Cancelar vista (proceso continúa)">
+      <i class="fas fa-times"></i>
+    </button>
+    <button type="button" id="btn-new-search" class="btn btn-info" style="display: none;"
+            data-tooltip="Nueva búsqueda">
+      <i class="fas fa-refresh"></i>
+    </button>
   </div>
 
   <form id="search-form">
@@ -192,7 +329,7 @@
       </div>
     </div>
 
-    <!-- Botón de Búsqueda -->
+    <!-- Botón de Búsqueda Principal -->
     <button type="button" id="btn-search" class="btn btn-primary btn-full">
       <i class="fas fa-search"></i>
       Iniciar Búsqueda de Jurisprudencia
@@ -206,14 +343,14 @@
       <h3>Estado del Proceso</h3>
     </div>
     <div id="status-content"></div>
-    <div style="margin-top: 1.5rem; display: flex; gap: 1rem;">
+    <div class="action-buttons">
       <button type="button" id="btn-check-status" class="btn btn-secondary">
         <i class="fas fa-sync-alt"></i>
         Actualizar Estado
       </button>
-      <button type="button" id="btn-view-logs" class="btn btn-secondary">
-        <i class="fas fa-file-code"></i>
-        Ver Logs
+      <button type="button" id="btn-download-csv" class="btn btn-primary" style="display: none;">
+        <i class="fas fa-download"></i>
+        Descargar CSV
       </button>
     </div>
   </div>

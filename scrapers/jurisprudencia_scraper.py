@@ -358,8 +358,11 @@ class JudicialScraper:
 
         return formatted_params
 
+    # En tu archivo scrapers/jurisprudencia_scraper.py
+    # Modifica la función search_and_download_with_params para aceptar cancel_event
+
     def search_and_download_with_params(self, search_params, download_pdfs=True,
-                                        max_results=None, max_workers=3):
+                                        max_results=None, max_workers=3, cancel_event=None):
         """Función que recibe parámetros externos del formulario web"""
 
         # Extraer fechas de los parámetros para logging
@@ -373,11 +376,21 @@ class JudicialScraper:
         self.logger.info(f"Descargar PDFs: {download_pdfs}")
         self.logger.info("=" * 50)
 
+        # NUEVO: Verificar cancelación al inicio
+        if cancel_event and cancel_event.is_set():
+            self.logger.info("Proceso cancelado antes de comenzar")
+            return None
+
         # Fase 1: Obtener página inicial
         self.logger.info("Fase 1: Obteniendo página inicial...")
         response = self.session.get(INDEX_URL)
         if response.status_code != 200:
             self.logger.error(f"Error en GET inicial: {response.status_code}")
+            return None
+
+        # NUEVO: Verificar cancelación
+        if cancel_event and cancel_event.is_set():
+            self.logger.info("Proceso cancelado durante fase 1")
             return None
 
         viewstate = self.extract_viewstate(response.text)
@@ -403,17 +416,6 @@ class JudicialScraper:
         formatted_params = search_params.copy()
         formatted_params['javax.faces.ViewState'] = viewstate
 
-        # CRÍTICO: Formatear campos especiales - FORMATO CORRECTO
-        if 'searchForm:tipoInput' in formatted_params and formatted_params['searchForm:tipoInput']:
-            tipo_value = formatted_params['searchForm:tipoInput']
-            # FORMATO CORRECTO: '"VALOR"' (comillas dobles dentro de comillas simples)
-            formatted_params['searchForm:tipoInput'] = f'"{tipo_value}"'
-
-        if 'searchForm:temaInput' in formatted_params and formatted_params['searchForm:temaInput']:
-            tema_value = formatted_params['searchForm:temaInput']
-            # Mismo formato que tipo
-            formatted_params['searchForm:temaInput'] = f'"{tema_value}"'
-
         # Debug: imprimir parámetros clave
         self.logger.info(f"Tipo providencia RAW: {repr(formatted_params.get('searchForm:tipoInput', 'N/A'))}")
         self.logger.info(f"Tema RAW: {repr(formatted_params.get('searchForm:temaInput', 'N/A'))}")
@@ -423,6 +425,11 @@ class JudicialScraper:
         self.logger.info(f"Publicación: {formatted_params.get('searchForm:relevanteselect', 'N/A')}")
         self.logger.info(
             f"Salas seleccionadas: {len(formatted_params.get('searchForm:scivil', []) + formatted_params.get('searchForm:slaboral', []) + formatted_params.get('searchForm:spenal', []) + formatted_params.get('searchForm:splena', []))}")
+
+        # NUEVO: Verificar cancelación
+        if cancel_event and cancel_event.is_set():
+            self.logger.info("Proceso cancelado durante fase 2")
+            return None
 
         # Realizar búsqueda con parámetros del formulario
         self.logger.info("Realizando búsqueda...")
@@ -449,7 +456,12 @@ class JudicialScraper:
         # Guardar manifiesto con parámetros completos
         manifest = self.save_manifest(formatted_params, total_results)
 
-        # Fase 3: Recolectar metadatos y descargar (usar la lógica existente)
+        # NUEVO: Verificar cancelación
+        if cancel_event and cancel_event.is_set():
+            self.logger.info("Proceso cancelado antes de la fase 3")
+            return None
+
+        # Fase 3: Recolectar metadatos y descargar
         self.logger.info("Fase 3: Recolectando metadatos y descargando PDFs...")
         all_results = []
 
@@ -459,7 +471,9 @@ class JudicialScraper:
                 futures = {}
 
                 # Procesar primera página
-                page_data = self.process_page_and_download(response.text, executor, futures)
+                page_data = self.process_page_and_download(response.text, executor, futures, cancel_event)
+                if page_data is None:  # Cancelado
+                    return None
                 all_results.extend(page_data)
 
                 # Navegar por páginas restantes (si hay más de 1 resultado)
@@ -467,6 +481,11 @@ class JudicialScraper:
                     nav_buttons = {'next': 'resultForm:j_idt258'}
 
                     for page in range(2, total_results + 1):
+                        # NUEVO: Verificar cancelación en cada página
+                        if cancel_event and cancel_event.is_set():
+                            self.logger.info(f"Proceso cancelado en página {page}")
+                            return None
+
                         self.logger.info(f"Procesando página {page}/{total_results}...")
 
                         nav_params = {
@@ -483,7 +502,10 @@ class JudicialScraper:
                         try:
                             response = self.session.post(INDEX_URL, data=nav_params, headers=ajax_headers, timeout=30)
                             if response.status_code == 200:
-                                page_data = self.process_page_and_download(response.text, executor, futures)
+                                page_data = self.process_page_and_download(response.text, executor, futures,
+                                                                           cancel_event)
+                                if page_data is None:  # Cancelado
+                                    return None
                                 all_results.extend(page_data)
                             else:
                                 self.logger.error(f"Error en página {page}: HTTP {response.status_code}")
@@ -500,6 +522,15 @@ class JudicialScraper:
                 self.logger.info("Esperando a que terminen las descargas...")
                 completed = 0
                 for future in as_completed(futures):
+                    # NUEVO: Verificar cancelación durante descargas
+                    if cancel_event and cancel_event.is_set():
+                        self.logger.info("Proceso cancelado durante descargas")
+                        # Cancelar descargas pendientes
+                        for pending_future in futures:
+                            if not pending_future.done():
+                                pending_future.cancel()
+                        return None
+
                     completed += 1
                     doc_id = futures[future]
                     try:
@@ -520,6 +551,11 @@ class JudicialScraper:
                 nav_buttons = {'next': 'resultForm:j_idt258'}
 
                 for page in range(2, total_results + 1):
+                    # NUEVO: Verificar cancelación
+                    if cancel_event and cancel_event.is_set():
+                        self.logger.info(f"Proceso cancelado en página {page}")
+                        return None
+
                     self.logger.info(f"Procesando página {page}/{total_results}...")
 
                     nav_params = {
@@ -543,6 +579,11 @@ class JudicialScraper:
 
                     time.sleep(0.5)
 
+        # NUEVO: Verificar cancelación final
+        if cancel_event and cancel_event.is_set():
+            self.logger.info("Proceso cancelado antes de guardar resultados finales")
+            return None
+
         # Guardar resultados finales
         self.save_results(all_results)
 
@@ -557,3 +598,23 @@ class JudicialScraper:
 
         self.logger.info("Proceso completado")
         return all_results
+
+    # NUEVO: Modificar process_page_and_download para soportar cancelación
+    def process_page_and_download(self, page_content, executor, futures, cancel_event=None):
+        """Procesa una página y programa las descargas"""
+        # Verificar cancelación
+        if cancel_event and cancel_event.is_set():
+            return None
+
+        page_data = self.extract_jurisprudence_data(page_content)
+
+        for record in page_data:
+            # Verificar cancelación antes de cada descarga
+            if cancel_event and cancel_event.is_set():
+                return None
+
+            # Programar descarga inmediata
+            future = executor.submit(self.download_pdf_worker, record)
+            futures[future] = record['id']
+
+        return page_data

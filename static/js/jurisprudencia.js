@@ -1,14 +1,16 @@
-// jurisprudencia.js - JavaScript específico de la página
+// jurisprudencia.js - JavaScript específico de la página con mejoras UX
 
 document.addEventListener('DOMContentLoaded', () => {
   // Variables globales
   let currentTimestamp = null;
   let statusInterval = null;
+  let isSearching = false;
 
   // Inicializar componentes
   initializeDatePickers();
   initializeSelects();
   initializeEventListeners();
+  createCancelModal(); // NUEVO: Crear modal de cancelación
 
   /**
    * Configurar selectores de fecha
@@ -57,13 +59,117 @@ document.addEventListener('DOMContentLoaded', () => {
   function initializeEventListeners() {
     document.getElementById('btn-search').addEventListener('click', handleSearch);
     document.getElementById('btn-check-status').addEventListener('click', checkStatus);
-    document.getElementById('btn-view-logs').addEventListener('click', viewLogs);
+    document.getElementById('btn-cancel-search').addEventListener('click', showCancelModal);
+    document.getElementById('btn-new-search').addEventListener('click', newSearch);
+    document.getElementById('btn-download-csv').addEventListener('click', downloadCSV);
+  }
+
+  /**
+   * NUEVO: Crear modal de cancelación
+   */
+  function createCancelModal() {
+    const modalHTML = `
+      <div id="cancel-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+          <div class="modal-header">
+            <i class="fas fa-exclamation-triangle"></i>
+            <h3>Confirmar Cancelación</h3>
+          </div>
+          <div class="modal-body">
+            <p>¿Está seguro de cancelar la búsqueda?</p>
+            <ul class="cancel-info">
+              <li><i class="fas fa-stop-circle"></i> Se detendrá el proceso completamente</li>
+              <li><i class="fas fa-trash"></i> Se perderán los resultados no guardados</li>
+              <li><i class="fas fa-times"></i> Esta acción no se puede deshacer</li>
+            </ul>
+          </div>
+          <div class="modal-actions">
+            <button id="cancel-confirm" class="btn btn-danger">
+              <i class="fas fa-stop"></i>
+              Sí, Cancelar
+            </button>
+            <button id="cancel-dismiss" class="btn btn-secondary">
+              <i class="fas fa-arrow-left"></i>
+              Continuar Búsqueda
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+    // Event listeners del modal
+    document.getElementById('cancel-confirm').addEventListener('click', confirmCancel);
+    document.getElementById('cancel-dismiss').addEventListener('click', hideCancelModal);
+    document.getElementById('cancel-modal').addEventListener('click', (e) => {
+      if (e.target.id === 'cancel-modal') hideCancelModal();
+    });
+  }
+
+  /**
+   * Mostrar modal de cancelación
+   */
+  function showCancelModal() {
+    if (!isSearching || !currentTimestamp) {
+      showNotification('No hay búsqueda activa para cancelar', 'warning');
+      return;
+    }
+
+    document.getElementById('cancel-modal').style.display = 'flex';
+  }
+
+  /**
+   * Ocultar modal de cancelación
+   */
+  function hideCancelModal() {
+    document.getElementById('cancel-modal').style.display = 'none';
+  }
+
+  /**
+   * Confirmar cancelación (REAL)
+   */
+  async function confirmCancel() {
+    hideCancelModal();
+    showLoader('Cancelando búsqueda...');
+
+    try {
+      // Llamar al endpoint de cancelación
+      const response = await fetch(`/cancel_scraping/${currentTimestamp}`, {
+        method: 'POST'
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        showNotification('Búsqueda cancelada correctamente', 'success');
+
+        // NUEVO: Recargar página después de 1 segundo
+        setTimeout(() => {
+          window.location.reload();
+        }, 1000);
+
+      } else {
+        throw new Error(result.message || 'Error al cancelar');
+      }
+    } catch (error) {
+      console.error('Error cancelando:', error);
+      showNotification('Error al cancelar: ' + error.message, 'error');
+      hideLoader();
+    }
   }
 
   /**
    * Manejar búsqueda principal
    */
   async function handleSearch() {
+    if (isSearching) {
+      showNotification('Ya hay una búsqueda en proceso', 'warning');
+      return;
+    }
+
+    // Bloquear botón y mostrar estado
+    setSearchingState(true);
     showLoader('Iniciando búsqueda de jurisprudencia...');
 
     try {
@@ -83,15 +189,17 @@ document.addEventListener('DOMContentLoaded', () => {
         // Consultar estado cada 10 segundos
         if (statusInterval) clearInterval(statusInterval);
         statusInterval = setInterval(() => {
-          if (currentTimestamp) checkStatus();
+          if (currentTimestamp && isSearching) checkStatus();
         }, 10000);
 
+        showNotification('Búsqueda iniciada correctamente', 'success');
       } else {
         throw new Error(result.message || 'Error en la búsqueda');
       }
     } catch (error) {
       console.error('Error:', error);
       showNotification('Error: ' + error.message, 'error');
+      setSearchingState(false);
     }
 
     hideLoader();
@@ -109,6 +217,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (response.ok) {
         updateStatusDisplay(result);
+
+        // Si el proceso terminó, desbloquear interfaz
+        if (result.final_report) {
+          setSearchingState(false);
+          showNotification('Búsqueda completada', 'success');
+        }
       }
     } catch (error) {
       console.error('Error consultando estado:', error);
@@ -116,14 +230,60 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /**
-   * Ver logs del proceso
+   * Nueva búsqueda - refrescar página
    */
-  function viewLogs() {
-    if (currentTimestamp) {
-      const logUrl = `/logs/${currentTimestamp}/descarga.log`;
-      window.open(logUrl, '_blank');
+  function newSearch() {
+    window.location.reload();
+  }
+
+  /**
+   * Descargar archivo CSV
+   */
+  function downloadCSV() {
+    if (!currentTimestamp) {
+      showNotification('No hay resultados para descargar', 'warning');
+      return;
+    }
+
+    // Crear enlace de descarga
+    const csvUrl = `/download_csv/${currentTimestamp}`;
+    const link = document.createElement('a');
+    link.href = csvUrl;
+    link.download = `jurisprudencia_${currentTimestamp}.csv`;
+    link.style.display = 'none';
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    showNotification('Descargando archivo CSV...', 'info');
+  }
+
+  /**
+   * Establecer estado de búsqueda
+   */
+  function setSearchingState(searching) {
+    isSearching = searching;
+    const searchBtn = document.getElementById('btn-search');
+    const cancelBtn = document.getElementById('btn-cancel-search');
+    const newSearchBtn = document.getElementById('btn-new-search');
+
+    if (searching) {
+      // Modo búsqueda activa
+      searchBtn.disabled = true;
+      searchBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Buscando...';
+      searchBtn.classList.add('btn-loading');
+
+      cancelBtn.style.display = 'flex';
+      newSearchBtn.style.display = 'none';
     } else {
-      showNotification('No hay proceso activo', 'warning');
+      // Modo inactivo
+      searchBtn.disabled = false;
+      searchBtn.innerHTML = '<i class="fas fa-search"></i> Iniciar Búsqueda de Jurisprudencia';
+      searchBtn.classList.remove('btn-loading');
+
+      cancelBtn.style.display = 'none';
+      newSearchBtn.style.display = 'flex';
     }
   }
 
@@ -155,10 +315,12 @@ document.addEventListener('DOMContentLoaded', () => {
    */
   function updateStatusDisplay(data) {
     const content = document.getElementById('status-content');
+    const downloadBtn = document.getElementById('btn-download-csv');
 
     if (data.manifest) {
       const manifest = data.manifest;
-      const statusClass = manifest.estado === 'COMPLETADO' ? 'completed' :
+      const statusClass = manifest.estado === 'completado' ? 'completed' :
+                         manifest.estado === 'cancelado' ? 'error' :
                          manifest.estado === 'ERROR' ? 'error' : 'running';
 
       let html = `
@@ -211,6 +373,12 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
           </div>
         `;
+
+        // Mostrar botón de descarga cuando termine
+        downloadBtn.style.display = 'inline-flex';
+      } else {
+        // Ocultar botón de descarga mientras está en proceso
+        downloadBtn.style.display = 'none';
       }
 
       content.innerHTML = html;
@@ -221,6 +389,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <p>${data.message || 'Procesando...'}</p>
         </div>
       `;
+      downloadBtn.style.display = 'none';
     }
   }
 
@@ -228,7 +397,6 @@ document.addEventListener('DOMContentLoaded', () => {
    * Mostrar notificación
    */
   function showNotification(message, type = 'info') {
-    // Crear elemento de notificación
     const notification = document.createElement('div');
     notification.className = `notification notification-${type}`;
     notification.innerHTML = `
@@ -240,7 +408,6 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
     `;
 
-    // Estilos de notificación
     Object.assign(notification.style, {
       position: 'fixed',
       top: '20px',
@@ -260,12 +427,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.body.appendChild(notification);
 
-    // Animar entrada
     setTimeout(() => {
       notification.style.transform = 'translateX(0)';
     }, 100);
 
-    // Remover después de 5 segundos
     setTimeout(() => {
       notification.style.transform = 'translateX(100%)';
       setTimeout(() => {

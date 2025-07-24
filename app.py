@@ -1,8 +1,10 @@
-# app.py - Con nuevas rutas para dashboard
+# app.py - Con cancelación real de procesos
 import threading
 import webbrowser
 import json
 from flask import Flask, render_template, request, Response, jsonify
+
+from datetime import datetime
 
 # CAMBIOS: Solo estos 2 imports cambiaron
 from scrapers.jurisprudencia_scraper import JudicialScraper
@@ -15,6 +17,10 @@ app = Flask(__name__)
 # Configurar logging para la app
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# NUEVO: Diccionario global para controlar cancelaciones
+cancel_events = {}
+active_scrapers = {}
 
 
 @app.route('/')
@@ -33,15 +39,6 @@ def jurisprudencia_filters():
 def search():
     """Endpoint que recibe los filtros y retorna el JSON de parámetros (para debugging)"""
     params = build_search_params(request.form)
-
-    # Aplicar el mismo formateo que usa el scraper para debugging
-    if params.get('searchForm:tipoInput'):
-        tipo_value = params['searchForm:tipoInput']
-        params['searchForm:tipoInput'] = f'"{tipo_value}"'
-
-    if params.get('searchForm:temaInput'):
-        tema_value = params['searchForm:temaInput']
-        params['searchForm:temaInput'] = f'"{tema_value}"'
 
     # Generar JSON mostrando el formato real
     json_output = json.dumps(params, indent=4, ensure_ascii=False)
@@ -66,6 +63,12 @@ def start_scraping():
 
         # Crear instancia del scraper
         scraper = JudicialScraper()
+        timestamp = scraper.timestamp
+
+        # NUEVO: Crear evento de cancelación
+        cancel_event = threading.Event()
+        cancel_events[timestamp] = cancel_event
+        active_scrapers[timestamp] = scraper
 
         # Ejecutar scraping en un hilo separado para no bloquear la respuesta
         def run_scraper():
@@ -75,11 +78,23 @@ def start_scraping():
                     search_params=search_params,
                     download_pdfs=download_pdfs,
                     max_results=max_results,
-                    max_workers=max_workers
+                    max_workers=max_workers,
+                    cancel_event=cancel_event  # NUEVO: Pasar evento de cancelación
                 )
-                logger.info(f"Scraping completado. Resultados: {len(results) if results else 0}")
+
+                if results is None:
+                    logger.info("Scraping cancelado por el usuario")
+                else:
+                    logger.info(f"Scraping completado. Resultados: {len(results) if results else 0}")
+
             except Exception as e:
                 logger.error(f"Error en scraping: {str(e)}")
+            finally:
+                # NUEVO: Limpiar eventos al terminar
+                if timestamp in cancel_events:
+                    del cancel_events[timestamp]
+                if timestamp in active_scrapers:
+                    del active_scrapers[timestamp]
 
         # Iniciar en hilo separado
         thread = threading.Thread(target=run_scraper)
@@ -90,7 +105,7 @@ def start_scraping():
         response_data = {
             'status': 'started',
             'message': 'Proceso de scraping iniciado correctamente',
-            'timestamp': scraper.timestamp,
+            'timestamp': timestamp,
             'log_dir': str(scraper.log_dir),
             'pdf_dir': str(scraper.pdf_dir),
             'parametros': {
@@ -108,6 +123,50 @@ def start_scraping():
         return jsonify({
             'status': 'error',
             'message': f'Error al iniciar el proceso: {str(e)}'
+        }), 500
+
+
+# NUEVA RUTA: Cancelar scraping real
+@app.route('/cancel_scraping/<timestamp>', methods=['POST'])
+def cancel_scraping(timestamp):
+    """Cancelar proceso de scraping activo"""
+    try:
+        if timestamp in cancel_events:
+            # Activar evento de cancelación
+            cancel_events[timestamp].set()
+
+            # Actualizar manifiesto si existe
+            if timestamp in active_scrapers:
+                scraper = active_scrapers[timestamp]
+                manifest_path = scraper.log_dir / 'manifest.json'
+
+                if manifest_path.exists():
+                    with open(manifest_path, 'r', encoding='utf-8') as f:
+                        manifest = json.load(f)
+
+                    manifest['estado'] = 'cancelado'
+                    manifest['fecha_cancelacion'] = datetime.now().isoformat()
+
+                    with open(manifest_path, 'w', encoding='utf-8') as f:
+                        json.dump(manifest, f, ensure_ascii=False, indent=2)
+
+            logger.info(f"Proceso {timestamp} cancelado por el usuario")
+
+            return jsonify({
+                'status': 'cancelled',
+                'message': 'Proceso cancelado correctamente'
+            })
+        else:
+            return jsonify({
+                'status': 'not_found',
+                'message': 'Proceso no encontrado o ya terminado'
+            }), 404
+
+    except Exception as e:
+        logger.error(f"Error cancelando proceso {timestamp}: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': f'Error al cancelar proceso: {str(e)}'
         }), 500
 
 
@@ -153,6 +212,38 @@ def scraping_status(timestamp):
             'status': 'error',
             'message': str(e)
         }), 500
+
+
+@app.route('/download_csv/<timestamp>')
+def download_csv(timestamp):
+    """Descargar archivo CSV de resultados"""
+    try:
+        from pathlib import Path
+        from flask import send_file
+
+        # Buscar archivo CSV en el directorio de logs
+        log_dir = Path(f"logs/{timestamp}")
+        csv_files = list(log_dir.glob('jurisprudencia_*.csv'))
+
+        if not csv_files:
+            return "Archivo CSV no encontrado", 404
+
+        # Tomar el primer archivo CSV encontrado
+        csv_file = csv_files[0]
+
+        if csv_file.exists():
+            return send_file(
+                csv_file,
+                as_attachment=True,
+                download_name=f'jurisprudencia_{timestamp}.csv',
+                mimetype='text/csv'
+            )
+        else:
+            return "Archivo CSV no encontrado", 404
+
+    except Exception as e:
+        logger.error(f"Error descargando CSV: {str(e)}")
+        return f"Error al descargar archivo: {str(e)}", 500
 
 
 @app.route('/logs/<timestamp>/<filename>')

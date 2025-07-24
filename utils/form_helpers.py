@@ -59,7 +59,8 @@ def build_search_params(form):
         'searchForm': 'searchForm',
 
         # Campos de tema y focus
-        'searchForm:temaInput': tema_value,
+        # Tema con formato especial (ya formateado)
+        'searchForm:temaInput': f'"{tema_value}"' if tema_value else '',
         'searchForm:scivil_focus': '',
         'searchForm:slaboral_focus': '',
         'searchForm:spenal_focus': '',
@@ -102,8 +103,9 @@ def build_search_params(form):
         'javax.faces.ViewState': viewstate,
 
         # OPCIONES CONFIGURABLES DESDE EL FORMULARIO
-        # Tipo de providencia con formato especial
-        'searchForm:tipoInput': providencia_value,  # Se formateará en el scraper
+        # Tipo de providencia con formato especial (ya formateado)
+        'searchForm:tipoInput': f'"{providencia_value}"' if providencia_value else '',
+
         # Fechas
         'searchForm:fechaIniCal': fecha_ini,
         'searchForm:fechaFinCal': fecha_fin,
