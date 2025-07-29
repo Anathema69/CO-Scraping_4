@@ -105,7 +105,7 @@ class JudicialScraperV2:
 
         return tema
 
-    def extract_jurisprudence_data(self, html_content: str) -> List[Dict]:
+    def extract_jurisprudence_data(self, html_content: str, page_number: int = 1) -> List[Dict]:
         """Extrae todos los datos de jurisprudencia del HTML"""
         data = []
 
@@ -121,9 +121,10 @@ class JudicialScraperV2:
                     # Verificar duplicados
                     if record['id'] not in self.processed_ids:
                         self.processed_ids.add(record['id'])
+                        record['pagina_origen'] = page_number  # AGREGAR número de página
                         data.append(record)
                         self.logger.debug(
-                            f"Extraído: ID={record['id']}, Providencia={record.get('numero_providencia', 'N/A')}")
+                            f"Extraído: ID={record['id']}, Providencia={record.get('numero_providencia', 'N/A')}, Página={page_number}")
 
         return data
 
@@ -136,7 +137,9 @@ class JudicialScraperV2:
                 'intentos': 0,
                 'error': None,
                 'tamaño_archivo': None,
-                'fecha_descarga': None
+                'fecha_descarga': None,
+                'pagina_origen': None,
+                'intentos_descarga': 0
             }
 
             # ID (requerido)
@@ -213,20 +216,27 @@ class JudicialScraperV2:
         return f"{doc_id}.pdf"
 
     def download_pdf_worker(self, record: Dict) -> Tuple[bool, str]:
-        """Worker para descargar un PDF"""
+        """Worker para descargar un PDF con 5 reintentos"""
         doc_id = record['id']
+        max_download_retries = 5  # Aumentado a 5 reintentos
 
         # Crear sesión temporal para esta descarga
         session = requests.Session()
         session.headers.update(HEADERS)
 
-        for attempt in range(self.max_retries):
+        for attempt in range(max_download_retries):
             try:
+                # Actualizar contador de intentos
+                with self.results_lock:
+                    record['intentos_descarga'] = attempt + 1
+
                 pdf_params = {
                     'corp': 'csj',
                     'ext': 'pdf',
                     'file': doc_id
                 }
+
+                self.logger.info(f"📥 Descargando {doc_id} - Intento {attempt + 1}/{max_download_retries}")
 
                 response = session.get(
                     PDF_URL,
@@ -262,24 +272,30 @@ class JudicialScraperV2:
                         record['tamaño_archivo'] = len(content)
                         record['fecha_descarga'] = datetime.now().isoformat()
 
-                    self.logger.info(f"✅ Descargado: {filename} ({len(content):,} bytes)")
+                    self.logger.info(f"✅ Descargado: {filename} ({len(content):,} bytes) - Intento {attempt + 1}")
                     return True, f"Descargado: {filename}"
                 else:
                     raise Exception(f"HTTP {response.status_code}")
 
             except Exception as e:
-                if attempt < self.max_retries - 1:
-                    time.sleep(2 * (attempt + 1))
-                    continue
+                error_msg = str(e)
+                self.logger.warning(f"⚠️ Intento {attempt + 1} falló para {doc_id}: {error_msg}")
+
+                if attempt < max_download_retries - 1:
+                    # Espera progresiva entre reintentos
+                    wait_time = min(5 * (attempt + 1), 30)  # Máximo 30 segundos
+                    self.logger.info(f"⏳ Esperando {wait_time}s antes del siguiente intento...")
+                    time.sleep(wait_time)
                 else:
-                    error_msg = str(e)
+                    # Último intento falló
                     with self.results_lock:
-                        record['error'] = error_msg
+                        record['error'] = f"Falló después de {max_download_retries} intentos: {error_msg}"
                         record['estado_descarga'] = 'error'
-                    self.logger.error(f"❌ Error descargando {doc_id}: {error_msg}")
+                    self.logger.error(
+                        f"❌ Error descargando {doc_id} después de {max_download_retries} intentos: {error_msg}")
                     return False, error_msg
-            finally:
-                session.close()
+
+        session.close()
 
     def navigate_to_next(self, viewstate: str) -> Tuple[bool, Optional[str]]:
         """Navegar a la siguiente página"""
@@ -453,6 +469,9 @@ class JudicialScraperV2:
                     self.logger.info(f"📄 Página 1: {len(page_data)} registros")
 
                     # Navegar por páginas restantes
+                    consecutive_empty_pages = 0  # Contador de páginas vacías consecutivas
+                    max_empty_pages = 3  # Máximo de páginas vacías antes de terminar
+
                     while len(self.all_results) < total_results:
                         # Verificar cancelación
                         if cancel_event and cancel_event.is_set():
@@ -464,14 +483,32 @@ class JudicialScraperV2:
 
                         if not success:
                             self.logger.error(f"Error navegando a página {pages_processed + 1}")
-                            break
+                            consecutive_empty_pages += 1
+                            if consecutive_empty_pages >= max_empty_pages:
+                                self.logger.error(
+                                    f"❌ {max_empty_pages} páginas consecutivas sin datos. Terminando navegación.")
+                                break
+                            continue
 
-                        # Extraer datos
-                        page_data = self.extract_jurisprudence_data(html)
+                        # Extraer datos con número de página
+                        page_data = self.extract_jurisprudence_data(html, pages_processed + 1)
 
                         if not page_data:
-                            self.logger.warning(f"Sin datos en página {pages_processed + 1}")
+                            self.logger.warning(f"⚠️ Sin datos en página {pages_processed + 1}")
+                            consecutive_empty_pages += 1
+
+                            if consecutive_empty_pages >= max_empty_pages:
+                                self.logger.error(
+                                    f"❌ {max_empty_pages} páginas consecutivas sin datos. Terminando navegación.")
+                                break
+
+                            # Intentar continuar con la siguiente página
+                            pages_processed += 1
+                            time.sleep(1.5)  # Pausa más larga en páginas vacías
+                            continue
                         else:
+                            # Resetear contador si encontramos datos
+                            consecutive_empty_pages = 0
                             self.all_results.extend(page_data)
 
                             # Programar descargas
@@ -511,9 +548,10 @@ class JudicialScraperV2:
 
             else:
                 # Solo recolectar metadatos sin descargar
-                page_data = self.extract_jurisprudence_data(response.text)
+                page_data = self.extract_jurisprudence_data(response.text, 1)  # Página 1
                 self.all_results.extend(page_data)
                 pages_processed = 1
+                consecutive_empty_pages = 0
 
                 while len(self.all_results) < total_results:
                     if cancel_event and cancel_event.is_set():
@@ -521,13 +559,23 @@ class JudicialScraperV2:
 
                     success, html = self.navigate_to_next(self.viewstate)
                     if not success:
-                        break
+                        consecutive_empty_pages += 1
+                        if consecutive_empty_pages >= 3:
+                            break
+                        continue
 
-                    page_data = self.extract_jurisprudence_data(html)
+                    page_data = self.extract_jurisprudence_data(html, pages_processed + 1)
                     if page_data:
+                        consecutive_empty_pages = 0
                         self.all_results.extend(page_data)
                         pages_processed += 1
                         self.logger.info(f"Página {pages_processed}: {len(page_data)} registros")
+                    else:
+                        consecutive_empty_pages += 1
+                        if consecutive_empty_pages >= 3:
+                            self.logger.error("3 páginas consecutivas sin datos. Terminando.")
+                            break
+                        pages_processed += 1
 
                     time.sleep(0.5)
 
@@ -591,7 +639,8 @@ class JudicialScraperV2:
             csv_fields = [
                 'id', 'numero_providencia', 'numero_proceso', 'fecha',
                 'ponente', 'tipo_providencia', 'clase_actuacion',
-                'tema', 'nombre_archivo', 'estado_descarga', 'error'
+                'tema', 'nombre_archivo', 'estado_descarga', 'error',
+                'pagina_origen', 'intentos_descarga'  # NUEVOS CAMPOS
             ]
 
             with open(csv_path, 'w', newline='', encoding='utf-8') as f:
