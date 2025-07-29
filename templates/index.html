@@ -37,27 +37,27 @@
       </div>
     </div>
 
-    <!-- Tesauro (Próximamente) -->
-    <div class="scraper-card disabled">
+    <!-- Tesauro -->
+    <div class="scraper-card active">
       <div class="card-icon">
         <i class="fas fa-book"></i>
       </div>
       <div class="card-content">
         <h3>Tesauro Jurídico</h3>
-        <p>Sistema de consulta de términos y conceptos jurídicos especializados</p>
+        <p>Superintendencia de Sociedades - Sistema de consulta de sentencias y conceptos</p>
         <div class="card-stats">
           <span><i class="fas fa-search"></i> Búsqueda avanzada</span>
-          <span><i class="fas fa-tags"></i> Categorización</span>
+          <span><i class="fas fa-file-pdf"></i> Descarga PDFs</span>
         </div>
       </div>
       <div class="card-actions">
-        <button class="btn btn-secondary" disabled>
-          <i class="fas fa-clock"></i>
-          Próximamente
-        </button>
+        <a href="{{ url_for('tesauro_filters') }}" class="btn btn-primary">
+          <i class="fas fa-search"></i>
+          Acceder
+        </a>
       </div>
       <div class="card-status">
-        <span class="status-badge status-coming-soon">En desarrollo</span>
+        <span class="status-badge status-active">Disponible</span>
       </div>
     </div>
 
@@ -99,7 +99,7 @@
           <i class="fas fa-code"></i>
           <div>
             <strong>Versión</strong>
-            <span>1.0.0 - Estable</span>
+            <span>2.0.0 - Unificada</span>
           </div>
         </div>
         <div class="info-item">

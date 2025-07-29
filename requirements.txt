@@ -1,23 +1,8 @@
-
-# requirements.txt - Dependencias del proyecto
-
 # Framework web
-Flask==2.3.3
+Flask
 
 # Scraping y peticiones HTTP
-requests==2.31.0
-
-# Utilidades estándar (incluidas en Python)
-# pathlib - manejo de rutas
-# json - procesamiento JSON
-# csv - manejo de archivos CSV
-# datetime - manejo de fechas
-# threading - hilos para scraping paralelo
-# concurrent.futures - ThreadPoolExecutor
-# logging - sistema de logs
-# re - expresiones regulares
-# urllib.parse - unquote para nombres de archivos
-# time - pausas entre peticiones
+requests
 
 # pyinstaller para generar el .exe
 pyinstaller

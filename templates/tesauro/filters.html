@@ -1,0 +1,394 @@
+{% extends "base.html" %}
+
+{% block title %}Tesauro Jurídico - Sistema de Scraping Judicial{% endblock %}
+
+{% block nav_links %}
+{{ super() }}
+<a href="{{ url_for('tesauro_filters') }}" class="nav-link active">
+  <i class="fas fa-book"></i>
+  Tesauro Jurídico
+</a>
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
+<style>
+  /* Estilos específicos para el Tesauro */
+  .preview-panel {
+    background: var(--bg-card);
+    border-radius: var(--border-radius-lg);
+    padding: var(--spacing-xl);
+    margin-top: var(--spacing-lg);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-lg);
+    display: none;
+  }
+
+  .preview-item {
+    background: var(--bg-input);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+    transition: var(--transition);
+  }
+
+  .preview-item:hover {
+    transform: translateX(4px);
+    background: var(--bg-secondary);
+  }
+
+  .preview-title {
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: var(--spacing-sm);
+  }
+
+  .preview-meta {
+    display: flex;
+    gap: var(--spacing-lg);
+    flex-wrap: wrap;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+  }
+
+  .preview-meta span {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+  }
+
+  .preview-meta i {
+    color: var(--accent-primary);
+  }
+
+  .advanced-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-weight: 500;
+    margin-top: var(--spacing-lg);
+    padding: var(--spacing-sm);
+    transition: var(--transition);
+  }
+
+  .advanced-toggle:hover {
+    color: var(--accent-primary);
+  }
+
+  .advanced-options {
+    margin-top: var(--spacing-lg);
+    display: none;
+    animation: slideDown 0.3s ease;
+  }
+
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .action-buttons {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1.5rem;
+    flex-wrap: wrap;
+  }
+
+  .action-buttons .btn {
+    flex: 1;
+    min-width: 150px;
+  }
+
+  /* Estilos para los controles flotantes */
+  .floating-controls {
+    position: fixed;
+    top: 100px;
+    right: 20px;
+    z-index: 999;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .floating-controls .btn {
+    min-width: auto;
+    padding: 0.75rem;
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow-lg);
+    transition: all 0.3s ease;
+  }
+
+  .floating-controls .btn:hover {
+    transform: scale(1.1);
+  }
+
+  .floating-controls .btn i {
+    margin: 0;
+  }
+
+  .floating-controls .btn::before {
+    content: attr(data-tooltip);
+    position: absolute;
+    right: 60px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow);
+  }
+
+  .floating-controls .btn:hover::before {
+    opacity: 1;
+  }
+
+  .btn-loading {
+    opacity: 0.7;
+    pointer-events: none;
+  }
+
+  .btn-danger {
+    background: linear-gradient(135deg, var(--error), #dc2626);
+    color: white;
+    box-shadow: var(--shadow);
+  }
+
+  .btn-danger:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .btn-info {
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+    color: white;
+    box-shadow: var(--shadow);
+  }
+
+  .btn-info:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+  }
+
+  @media (max-width: 768px) {
+    .floating-controls {
+      position: relative;
+      top: auto;
+      right: auto;
+      flex-direction: row;
+      justify-content: center;
+      margin: 1rem 0;
+    }
+
+    .floating-controls .btn::before {
+      display: none;
+    }
+
+    .action-buttons {
+      flex-direction: column;
+    }
+
+    .action-buttons .btn {
+      width: 100%;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+  <!-- Header -->
+  <div class="header">
+    <h1><i class="fas fa-book"></i> Tesauro Jurídico</h1>
+    <p>Superintendencia de Sociedades - Sistema de Búsqueda y Descarga</p>
+  </div>
+
+  <!-- Controles flotantes -->
+  <div class="floating-controls">
+    <button type="button" id="btn-cancel-search" class="btn btn-danger" style="display: none;"
+            data-tooltip="Cancelar búsqueda">
+      <i class="fas fa-times"></i>
+    </button>
+    <button type="button" id="btn-new-search" class="btn btn-info" style="display: none;"
+            data-tooltip="Nueva búsqueda">
+      <i class="fas fa-refresh"></i>
+    </button>
+  </div>
+
+  <form id="search-form">
+    <!-- Sección 1: Filtros Principales -->
+    <div class="card">
+      <div class="card-header">
+        <i class="fas fa-filter"></i>
+        <h3>Filtros de Búsqueda</h3>
+      </div>
+      
+      <!-- Tipo de Contenido -->
+      <div class="field">
+        <label class="field-label" for="tipo-contenido">
+          <i class="fas fa-tags"></i>
+          Tipo de Contenido
+        </label>
+        <select id="tipo-contenido" name="tipo_contenido" class="form-control">
+          <option value="">-- Todos los tipos --</option>
+          <option value="Sentencias en formato escrito">Sentencias en formato escrito</option>
+          <option value="Conceptos jurídicos">Conceptos jurídicos</option>
+          <option value="Temas y problemas">Temas y problemas</option>
+          <option value="Sentencias en formato video">Sentencias en formato video</option>
+        </select>
+      </div>
+
+      <!-- Rango de Fechas -->
+      <div class="form-grid two-col" style="margin-top: var(--spacing-lg);">
+        <div class="field">
+          <label class="field-label" for="fecha-desde">
+            <i class="fas fa-calendar-plus"></i>
+            Fecha desde
+          </label>
+          <input type="text" id="fecha-desde" name="fecha_desde" placeholder="Seleccione fecha inicial">
+        </div>
+        <div class="field">
+          <label class="field-label" for="fecha-hasta">
+            <i class="fas fa-calendar-minus"></i>
+            Fecha hasta
+          </label>
+          <input type="text" id="fecha-hasta" name="fecha_hasta" placeholder="Seleccione fecha final">
+        </div>
+      </div>
+
+      <!-- Opciones Avanzadas (Toggle) -->
+      <div class="advanced-toggle" onclick="toggleAdvanced()">
+        <i class="fas fa-chevron-right" id="advanced-icon"></i>
+        <span>Opciones Avanzadas</span>
+      </div>
+
+      <div class="advanced-options" id="advanced-options">
+        <div class="form-grid two-col">
+          <div class="field">
+            <label class="field-label" for="max-results">
+              <i class="fas fa-list-ol"></i>
+              Máximo de Resultados
+            </label>
+            <input type="number" id="max-results" name="max_results"
+                   placeholder="Dejar vacío para todos" min="1">
+          </div>
+          <div class="field">
+            <label class="field-label" for="max-workers">
+              <i class="fas fa-users"></i>
+              Workers Paralelos
+            </label>
+            <input type="number" id="max-workers" name="max_workers"
+                   value="3" min="1" max="10">
+          </div>
+        </div>
+        <div class="choice-group" style="margin-top: var(--spacing-md);">
+          <div class="choice-item">
+            <input type="checkbox" id="download-pdfs" name="download_pdfs" value="true" checked>
+            <label for="download-pdfs">Descargar PDFs automáticamente</label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Botones de Acción -->
+    <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+      <button type="button" id="btn-preview" class="btn btn-secondary" onclick="previewSearch()">
+        <i class="fas fa-eye"></i>
+        Vista Previa
+      </button>
+      <button type="button" id="btn-search" class="btn btn-primary btn-full">
+        <i class="fas fa-search"></i>
+        Iniciar Búsqueda Completa
+      </button>
+    </div>
+  </form>
+
+  <!-- Panel de Vista Previa -->
+  <div id="preview-panel" class="preview-panel">
+    <div class="card-header">
+      <i class="fas fa-eye"></i>
+      <h3>Vista Previa de Resultados</h3>
+    </div>
+    <div id="preview-content"></div>
+  </div>
+
+  <!-- Panel de Resultados -->
+  <div id="results-panel" class="results-panel" style="display: none;">
+    <div class="card-header">
+      <i class="fas fa-chart-line"></i>
+      <h3>Estado del Proceso</h3>
+    </div>
+    <div id="status-content"></div>
+    <div class="action-buttons">
+      <button type="button" id="btn-check-status" class="btn btn-secondary">
+        <i class="fas fa-sync-alt"></i>
+        Actualizar Estado
+      </button>
+      <button type="button" id="btn-download-csv" class="btn btn-primary" style="display: none;">
+        <i class="fas fa-download"></i>
+        Descargar CSV
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Loader -->
+<div id="loader-overlay" class="loader-overlay" style="display: none;">
+  <div class="loader-content">
+    <div class="spinner"></div>
+    <p id="loader-text">Procesando...</p>
+  </div>
+</div>
+
+<!-- Modal de Cancelación -->
+<div id="cancel-modal" class="modal-overlay" style="display: none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <i class="fas fa-exclamation-triangle"></i>
+      <h3>Confirmar Cancelación</h3>
+    </div>
+    <div class="modal-body">
+      <p>¿Está seguro de cancelar la búsqueda?</p>
+      <ul class="cancel-info">
+        <li><i class="fas fa-stop-circle"></i> Se detendrá el proceso completamente</li>
+        <li><i class="fas fa-trash"></i> Se perderán los resultados no guardados</li>
+        <li><i class="fas fa-times"></i> Esta acción no se puede deshacer</li>
+      </ul>
+    </div>
+    <div class="modal-actions">
+      <button id="cancel-confirm" class="btn btn-danger">
+        <i class="fas fa-stop"></i>
+        Sí, Cancelar
+      </button>
+      <button id="cancel-dismiss" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i>
+        Continuar Búsqueda
+      </button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/es.js"></script>
+<script src="{{ url_for('static', filename='js/tesauro.js') }}"></script>
+{% endblock %}

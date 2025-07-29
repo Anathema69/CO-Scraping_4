@@ -11,8 +11,8 @@
 {% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select/dist/css/tom-select.default.min.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/css/tom-select.default.min.css" />
 <link rel="stylesheet" href="{{ url_for('static', filename='css/tom-select.css') }}" />
 
 <style>
@@ -152,7 +152,7 @@
   <!-- Controles flotantes -->
   <div class="floating-controls">
     <button type="button" id="btn-cancel-search" class="btn btn-danger" style="display: none;"
-            data-tooltip="Cancelar vista (proceso continúa)">
+            data-tooltip="Cancelar búsqueda">
       <i class="fas fa-times"></i>
     </button>
     <button type="button" id="btn-new-search" class="btn btn-info" style="display: none;"
@@ -363,10 +363,39 @@
     <p id="loader-text">Procesando...</p>
   </div>
 </div>
+
+<!-- Modal de Cancelación -->
+<div id="cancel-modal" class="modal-overlay" style="display: none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <i class="fas fa-exclamation-triangle"></i>
+      <h3>Confirmar Cancelación</h3>
+    </div>
+    <div class="modal-body">
+      <p>¿Está seguro de cancelar la búsqueda?</p>
+      <ul class="cancel-info">
+        <li><i class="fas fa-stop-circle"></i> Se detendrá el proceso completamente</li>
+        <li><i class="fas fa-trash"></i> Se perderán los resultados no guardados</li>
+        <li><i class="fas fa-times"></i> Esta acción no se puede deshacer</li>
+      </ul>
+    </div>
+    <div class="modal-actions">
+      <button id="cancel-confirm" class="btn btn-danger">
+        <i class="fas fa-stop"></i>
+        Sí, Cancelar
+      </button>
+      <button id="cancel-dismiss" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i>
+        Continuar Búsqueda
+      </button>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
-<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-<script src="https://cdn.jsdelivr.net/npm/tom-select/dist/js/tom-select.complete.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/es.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
 <script src="{{ url_for('static', filename='js/jurisprudencia.js') }}"></script>
 {% endblock %}

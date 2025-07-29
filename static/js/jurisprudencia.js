@@ -134,8 +134,8 @@ document.addEventListener('DOMContentLoaded', () => {
     showLoader('Cancelando búsqueda...');
 
     try {
-      // Llamar al endpoint de cancelación
-      const response = await fetch(`/cancel_scraping/${currentTimestamp}`, {
+      // Llamar al endpoint de cancelación - RUTA CORREGIDA
+      const response = await fetch(`/jurisprudencia/cancel_scraping/${currentTimestamp}`, {
         method: 'POST'
       });
 
@@ -174,7 +174,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       const formData = serializeForm();
-      const response = await fetch('/start_scraping', {
+      // RUTA CORREGIDA
+      const response = await fetch('/jurisprudencia/start_scraping', {
         method: 'POST',
         body: formData
       });
@@ -212,7 +213,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!currentTimestamp) return;
 
     try {
-      const response = await fetch(`/scraping_status/${currentTimestamp}`);
+      // RUTA CORREGIDA
+      const response = await fetch(`/jurisprudencia/scraping_status/${currentTimestamp}`);
       const result = await response.json();
 
       if (response.ok) {
@@ -245,8 +247,8 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // Crear enlace de descarga
-    const csvUrl = `/download_csv/${currentTimestamp}`;
+    // Crear enlace de descarga - RUTA CORREGIDA
+    const csvUrl = `/jurisprudencia/download_csv/${currentTimestamp}`;
     const link = document.createElement('a');
     link.href = csvUrl;
     link.download = `jurisprudencia_${currentTimestamp}.csv`;

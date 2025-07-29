@@ -105,6 +105,7 @@ def build_search_params(form):
         # OPCIONES CONFIGURABLES DESDE EL FORMULARIO
         # Tipo de providencia con formato especial (ya formateado)
         'searchForm:tipoInput': f'"{providencia_value}"' if providencia_value else '',
+        
 
         # Fechas
         'searchForm:fechaIniCal': fecha_ini,
