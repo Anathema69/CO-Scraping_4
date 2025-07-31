@@ -6,3 +6,6 @@ requests
 
 # pyinstaller para generar el .exe
 pyinstaller
+
+# para beautifulsoup
+beautifulsoup4
