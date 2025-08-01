@@ -102,6 +102,21 @@
             padding-bottom: 10px;
             border-bottom: 2px solid #ecf0f1;
         }
+        .test-notice {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+        .test-notice h5 {
+            color: #856404;
+            margin-bottom: 10px;
+        }
+        .test-notice ul {
+            margin-bottom: 0;
+            padding-left: 20px;
+        }
     </style>
 </head>
 <body>
@@ -110,6 +125,16 @@
         <div class="header text-center">
             <h1><i class="fas fa-gavel"></i> Consejo de Estado - SAMAI</h1>
             <p class="mb-0">Sistema de búsqueda y descarga de providencias judiciales</p>
+        </div>
+
+        <!-- Aviso de Prueba -->
+        <div class="test-notice">
+            <h5><i class="fas fa-info-circle"></i> Modo de Prueba Activo</h5>
+            <ul>
+                <li>Limitado a máximo 2 páginas de resultados</li>
+                <li>Limitado a máximo 5 descargas de archivos ZIP</li>
+                <li>Ideal para verificar funcionamiento antes de búsquedas extensas</li>
+            </ul>
         </div>
 
         <!-- Filtros -->
@@ -153,10 +178,20 @@
                                placeholder="DD/MM/YYYY" required>
                     </div>
 
-                    <!-- Configuración fija por ahora -->
+                    <!-- Configuración de prueba (oculta) -->
                     <input type="hidden" id="download_pdfs" name="download_pdfs" value="true">
-                    <input type="hidden" id="max_results" name="max_results" value="">
+                    <input type="hidden" id="max_results" name="max_results" value="5">
                     <input type="hidden" id="max_workers" name="max_workers" value="1">
+                </div>
+
+                <!-- Opciones Avanzadas -->
+                <div class="alert alert-info mt-3">
+                    <i class="fas fa-cog"></i> <strong>Configuración de Prueba:</strong>
+                    <ul class="mb-0 mt-2">
+                        <li>Descargar archivos ZIP: <strong>Sí</strong></li>
+                        <li>Máximo de descargas: <strong>5 archivos</strong></li>
+                        <li>Workers paralelos: <strong>1 (secuencial)</strong></li>
+                    </ul>
                 </div>
 
                 <!-- Botones -->

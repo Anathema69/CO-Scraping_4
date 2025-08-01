@@ -552,9 +552,9 @@ def consejo_estado_start_scraping():
             }), 400
 
         # Obtener opciones
-        download_pdfs = request.form.get('download_pdfs') == 'true'
+        download_pdfs = True
         max_results = request.form.get('max_results', '').strip()
-        max_workers = request.form.get('max_workers', '3').strip()
+        max_workers = 3
 
         # Convertir a int si es necesario
         max_results = int(max_results) if max_results else None
@@ -855,10 +855,10 @@ if __name__ == '__main__':
     Path('logs').mkdir(exist_ok=True)
     Path('descargas_pdf').mkdir(exist_ok=True)
     Path('descargas_tesauro').mkdir(exist_ok=True)
-    Path('descargas_consejo_estado').mkdir(exist_ok=True)  # Nuevo directorio
+    Path('descargas_consejo_estado').mkdir(exist_ok=True)
     Path('templates/jurisprudencia').mkdir(parents=True, exist_ok=True)
     Path('templates/tesauro').mkdir(parents=True, exist_ok=True)
-    Path('templates/consejo_estado').mkdir(parents=True, exist_ok=True)  # Nuevo directorio
+    Path('templates/consejo_estado').mkdir(parents=True, exist_ok=True)
 
 
 
