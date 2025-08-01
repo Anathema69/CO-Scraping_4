@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+
+{% block title %}Biblioteca Digital CCB - Filtros de Búsqueda{% endblock %}
+
+{% block nav_links %}
+<a href="{{ url_for('dashboard') }}" class="nav-link">
+  <i class="fas fa-home"></i>
+  Dashboard
+</a>
+<a href="#" class="nav-link active">
+  <i class="fas fa-landmark"></i>
+  Biblioteca CCB
+</a>
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/biblioteca_ccb.css') }}" />
+{% endblock %}
+
+{% block content %}
+<div class="container">
+  <!-- Header -->
+  <div class="page-header">
+    <div class="header-content">
+      <i class="fas fa-landmark header-icon"></i>
+      <div>
+        <h1>Biblioteca Digital CCB</h1>
+        <p>Cámara de Comercio de Bogotá - Sistema de Laudos Arbitrales</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tipo de Arbitraje Selector -->
+  <div class="card">
+    <div class="card-header">
+      <i class="fas fa-gavel"></i>
+      <h3>Tipo de Arbitraje</h3>
+    </div>
+    <div class="arbitrage-selector">
+      <div class="form-group">
+        <label for="tipoArbitraje">Seleccione el tipo de arbitraje a consultar</label>
+        <select id="tipoArbitraje" class="form-control" onchange="handleArbitrageTypeChange()">
+          <option value="">-- Seleccione una opción --</option>
+          <option value="nacional" selected>a. Arbitraje nacional</option>
+          <option value="social" disabled>b. Arbitraje social (Próximamente)</option>
+        </select>
+        <div class="coming-soon-notice" id="socialNotice" style="display: none;">
+          <i class="fas fa-clock"></i>
+          <span>Esta funcionalidad estará disponible próximamente</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filtros de Búsqueda -->
+  <div class="card" id="filtersCard" style="display: none;">
+    <div class="card-header">
+      <i class="fas fa-filter"></i>
+      <h3>Filtros de Búsqueda - Arbitraje Nacional</h3>
+    </div>
+    
+    <form id="searchForm" class="search-form">
+      <!-- Subcomunidades y colecciones -->
+      <div class="filter-tabs">
+        <button type="button" class="tab-button active" onclick="setActiveTab(this, 'subcomunidades')">
+          Subcomunidades y colecciones
+        </button>
+        <button type="button" class="tab-button" onclick="setActiveTab(this, 'fecha')">
+          Por fecha de publicación
+        </button>
+        <button type="button" class="tab-button" onclick="setActiveTab(this, 'autor')">
+          Por autor
+        </button>
+        <button type="button" class="tab-button" onclick="setActiveTab(this, 'titulo')">
+          Por título
+        </button>
+        <button type="button" class="tab-button" onclick="setActiveTab(this, 'materia')">
+          Por materia
+        </button>
+      </div>
+
+      <!-- Contenido de las pestañas -->
+      <div class="tab-content">
+        <!-- Subcomunidades -->
+        <div id="tab-subcomunidades" class="tab-pane active">
+          <div class="info-message">
+            <i class="fas fa-info-circle"></i>
+            <p>Esta búsqueda explorará todas las subcomunidades y colecciones del arbitraje nacional.</p>
+          </div>
+        </div>
+
+        <!-- Por fecha -->
+        <div id="tab-fecha" class="tab-pane">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="fechaDesde">Fecha desde</label>
+              <input type="date" id="fechaDesde" class="form-control" />
+            </div>
+            <div class="form-group">
+              <label for="fechaHasta">Fecha hasta</label>
+              <input type="date" id="fechaHasta" class="form-control" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Por autor -->
+        <div id="tab-autor" class="tab-pane">
+          <div class="form-group">
+            <label for="autor">Nombre del autor</label>
+            <input type="text" id="autor" class="form-control" placeholder="Ingrese el nombre del autor" />
+            <small class="form-text">Puede buscar por nombre completo o parcial</small>
+          </div>
+        </div>
+
+        <!-- Por título -->
+        <div id="tab-titulo" class="tab-pane">
+          <div class="form-group">
+            <label for="titulo">Título del laudo</label>
+            <input type="text" id="titulo" class="form-control" placeholder="Ingrese palabras clave del título" />
+            <small class="form-text">Busque por palabras clave en el título del laudo arbitral</small>
+          </div>
+        </div>
+
+        <!-- Por materia -->
+        <div id="tab-materia" class="tab-pane">
+          <div class="form-group">
+            <label for="materia">Materia o tema</label>
+            <input type="text" id="materia" class="form-control" placeholder="Ingrese la materia o tema" />
+            <small class="form-text">Busque por materias o temas específicos</small>
+          </div>
+        </div>
+      </div>
+
+      <!-- Botón de búsqueda -->
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="resetForm()">
+          <i class="fas fa-undo"></i>
+          Limpiar filtros
+        </button>
+        <button type="submit" class="btn btn-primary">
+          <i class="fas fa-search"></i>
+          Buscar laudos
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Información adicional -->
+  <div class="info-cards">
+    <div class="info-card">
+      <i class="fas fa-info-circle"></i>
+      <h4>Sobre la Biblioteca Digital CCB</h4>
+      <p>Acceda a la colección completa de laudos arbitrales de la Cámara de Comercio de Bogotá, incluyendo decisiones en arbitraje nacional y social.</p>
+    </div>
+    <div class="info-card">
+      <i class="fas fa-shield-alt"></i>
+      <h4>Información confiable</h4>
+      <p>Todos los laudos son documentos oficiales publicados por el Centro de Arbitraje y Conciliación de la CCB.</p>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/biblioteca_ccb.js') }}"></script>
+{% endblock %}

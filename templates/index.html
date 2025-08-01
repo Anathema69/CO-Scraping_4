@@ -81,12 +81,62 @@
         </a>
       </div>
       <div class="card-status">
+        <span class="status-badge status-active">Disponible</span>
+      </div>
+    </div>
 
-          <span class="status-badge status-active">Disponible</span>
+    <!-- Biblioteca Digital CCB -->
+    <div class="scraper-card active">
+      <div class="card-icon">
+        <i class="fas fa-landmark"></i>
+      </div>
+      <div class="card-content">
+        <h3>Biblioteca Digital CCB</h3>
+        <p>Cámara de Comercio de Bogotá - Laudos arbitrales nacionales y sociales</p>
+        <div class="card-stats">
+          <span><i class="fas fa-briefcase"></i> Arbitraje comercial</span>
+          <span><i class="fas fa-users"></i> Arbitraje social</span>
+        </div>
+      </div>
+      <div class="card-actions">
+        <a href="{{ url_for('biblioteca_ccb_filters') }}" class="btn btn-primary">
+          <i class="fas fa-search"></i>
+          Acceder
+        </a>
+      </div>
+      <div class="card-status">
+        <span class="status-badge status-active">Disponible</span>
+      </div>
+    </div>
+
+    <!-- DIAN -->
+    <div class="scraper-card active">
+      <div class="card-icon">
+        <i class="fas fa-file-invoice"></i>
+      </div>
+      <div class="card-content">
+        <h3>Conceptos y Oficios DIAN</h3>
+        <p>Dirección de Impuestos y Aduanas Nacionales - Consulta de conceptos tributarios</p>
+        <div class="card-stats">
+          <span><i class="fas fa-calculator"></i> Conceptos tributarios</span>
+          <span><i class="fas fa-calendar-alt"></i> Búsqueda por fecha</span>
+        </div>
+      </div>
+      <div class="card-actions">
+        <a href="{{ url_for('dian_filters') }}" class="btn btn-primary">
+          <i class="fas fa-search"></i>
+          Acceder
+        </a>
+      </div>
+      <div class="card-status">
+        <!--  <span class="status-badge status-active">Disponible</span> -->
+          <span class="status-badge status-coming-soon">Próximamente</span>
       </div>
     </div>
 
   </div>
+
+  </div> <!-- aquí es el final de la consolidación de tarjetas que se muestra en pantalla -->
 
   <!-- Información del Sistema -->
   <div class="system-info">

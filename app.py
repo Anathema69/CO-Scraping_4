@@ -37,10 +37,6 @@ def dashboard():
 # RUTAS DE JURISPRUDENCIA
 # =====================
 
-@app.route('/jurisprudencia')
-def jurisprudencia_filters():
-    """Página de filtros de jurisprudencia"""
-    return render_template('jurisprudencia/filters.html')
 
 
 @app.route('/jurisprudencia/search', methods=['POST'])
@@ -258,10 +254,7 @@ def jurisprudencia_download_csv(timestamp):
 # RUTAS DEL TESAURO
 # =====================
 
-@app.route('/tesauro')
-def tesauro_filters():
-    """Página de filtros del tesauro"""
-    return render_template('tesauro/filters.html')
+
 
 
 @app.route('/tesauro/preview', methods=['POST'])
@@ -481,10 +474,7 @@ def tesauro_status(timestamp):
 # RUTAS DEL CONSEJO DE ESTADO
 # =====================
 
-@app.route('/consejo_estado')
-def consejo_estado_filters():
-    """Página de filtros del Consejo de Estado"""
-    return render_template('consejo_estado/filters.html')
+
 
 
 @app.route('/consejo_estado/preview', methods=['POST'])
@@ -848,6 +838,27 @@ def active_processes():
 
 
 
+@app.route('/jurisprudencia')
+def jurisprudencia_filters():
+    """Página de filtros de jurisprudencia"""
+    return render_template('jurisprudencia/filters.html')
+
+@app.route('/tesauro')
+def tesauro_filters():
+    """Página de filtros del tesauro"""
+    return render_template('tesauro/filters.html')
+@app.route('/consejo_estado')
+def consejo_estado_filters():
+    """Página de filtros del Consejo de Estado"""
+    return render_template('consejo_estado/filters.html')
+
+@app.route('/biblioteca_ccb')
+def biblioteca_ccb_filters():
+    return render_template('biblioteca_ccb/filters.html')
+
+@app.route('/dian')
+def dian_filters():
+    return render_template('dian/filters.html')
 
 
 if __name__ == '__main__':
