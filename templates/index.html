@@ -1,240 +1,305 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sistema Unificado de Scrapers Judiciales</title>
-    <!-- Bootstrap CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    
-    <style>
-        body {
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-            min-height: 100vh;
-            padding: 40px 0;
-        }
-        .main-container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-        .header {
-            text-align: center;
-            margin-bottom: 50px;
-        }
-        .header h1 {
-            color: #2c3e50;
-            font-size: 2.5rem;
-            font-weight: 700;
-            margin-bottom: 10px;
-        }
-        .header p {
-            color: #7f8c8d;
-            font-size: 1.2rem;
-        }
-        .scraper-card {
-            background: white;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-            padding: 30px;
-            margin-bottom: 30px;
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }
-        .scraper-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 15px 40px rgba(0,0,0,0.15);
-        }
-        .scraper-icon {
-            font-size: 3rem;
-            margin-bottom: 20px;
-        }
-        .scraper-title {
-            font-size: 1.5rem;
-            font-weight: 600;
-            color: #2c3e50;
-            margin-bottom: 15px;
-        }
-        .scraper-description {
-            color: #7f8c8d;
-            margin-bottom: 20px;
-        }
-        .btn-access {
-            background-color: #3498db;
-            color: white;
-            border: none;
-            padding: 10px 30px;
-            border-radius: 25px;
-            font-weight: 500;
-            transition: all 0.3s ease;
-        }
-        .btn-access:hover {
-            background-color: #2980b9;
-            color: white;
-            transform: translateX(5px);
-        }
-        .status-badge {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            padding: 5px 15px;
-            border-radius: 20px;
-            font-size: 0.8rem;
-            font-weight: 600;
-        }
-        .status-active {
-            background-color: #2ecc71;
-            color: white;
-        }
-        .status-beta {
-            background-color: #f39c12;
-            color: white;
-        }
-        .status-maintenance {
-            background-color: #e74c3c;
-            color: white;
-        }
-        .features-list {
-            list-style: none;
-            padding: 0;
-        }
-        .features-list li {
-            padding: 5px 0;
-            color: #34495e;
-        }
-        .features-list li i {
-            color: #2ecc71;
-            margin-right: 10px;
-        }
-        .footer {
-            text-align: center;
-            margin-top: 50px;
-            color: #7f8c8d;
-        }
-    </style>
-</head>
-<body>
-    <div class="main-container">
-        <!-- Header -->
-        <div class="header">
-            <h1><i class="fas fa-balance-scale"></i> Sistema Unificado de Scrapers Judiciales</h1>
-            <p>Acceda a los diferentes sistemas de búsqueda y descarga de documentos judiciales</p>
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Sistema de Scraping Judicial{% endblock %}
+
+{% block content %}
+<div class="container">
+  <!-- Header del Dashboard -->
+  <div class="dashboard-header">
+    <h1><i class="fas fa-tachometer-alt"></i> Dashboard de Scrapers</h1>
+    <p>Seleccione el sistema judicial del cual desea extraer información</p>
+  </div>
+
+  <!-- Grid de Opciones -->
+  <div class="scrapers-grid">
+
+    <!-- Jurisprudencia -->
+    <div class="scraper-card active">
+      <div class="card-icon">
+        <i class="fas fa-gavel"></i>
+      </div>
+      <div class="card-content">
+        <h3>Jurisprudencia</h3>
+        <p>Corte Suprema de Justicia - Consulta y descarga de providencias judiciales</p>
+        <div class="card-stats">
+          <span><i class="fas fa-building"></i> 9 Salas disponibles</span>
+          <span><i class="fas fa-file-pdf"></i> Descarga PDFs</span>
         </div>
-
-        <!-- Scrapers Grid -->
-        <div class="row">
-            <!-- Jurisprudencia CSJ -->
-            <div class="col-lg-4 col-md-6">
-                <div class="scraper-card position-relative">
-                    <span class="status-badge status-active">Activo</span>
-                    <div class="text-center scraper-icon text-primary">
-                        <i class="fas fa-gavel"></i>
-                    </div>
-                    <h3 class="scraper-title">Jurisprudencia CSJ</h3>
-                    <p class="scraper-description">
-                        Sistema de búsqueda y descarga de jurisprudencia de la Corte Suprema de Justicia
-                    </p>
-                    <ul class="features-list mb-4">
-                        <li><i class="fas fa-check"></i> Búsqueda por fechas</li>
-                        <li><i class="fas fa-check"></i> Descarga de PDFs</li>
-                        <li><i class="fas fa-check"></i> Búsqueda segmentada</li>
-                        <li><i class="fas fa-check"></i> Exportación a CSV</li>
-                    </ul>
-                    <div class="text-center">
-                        <a href="/jurisprudencia" class="btn btn-access">
-                            <i class="fas fa-arrow-right"></i> Acceder
-                        </a>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Tesauro -->
-            <div class="col-lg-4 col-md-6">
-                <div class="scraper-card position-relative">
-                    <span class="status-badge status-active">Activo</span>
-                    <div class="text-center scraper-icon text-success">
-                        <i class="fas fa-book"></i>
-                    </div>
-                    <h3 class="scraper-title">Tesauro Jurídico</h3>
-                    <p class="scraper-description">
-                        Búsqueda y descarga de documentos del Tesauro de la Superintendencia de Sociedades
-                    </p>
-                    <ul class="features-list mb-4">
-                        <li><i class="fas fa-check"></i> Filtros por tipo de contenido</li>
-                        <li><i class="fas fa-check"></i> Búsqueda por fechas</li>
-                        <li><i class="fas fa-check"></i> Descarga de documentos</li>
-                        <li><i class="fas fa-check"></i> Vista previa</li>
-                    </ul>
-                    <div class="text-center">
-                        <a href="/tesauro" class="btn btn-access">
-                            <i class="fas fa-arrow-right"></i> Acceder
-                        </a>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Consejo de Estado -->
-            <div class="col-lg-4 col-md-6">
-                <div class="scraper-card position-relative">
-                    <span class="status-badge status-active">Activo</span>
-                    <div class="text-center scraper-icon text-info">
-                        <i class="fas fa-university"></i>
-                    </div>
-                    <h3 class="scraper-title">Consejo de Estado</h3>
-                    <p class="scraper-description">
-                        Sistema SAMAI - Búsqueda y descarga de providencias del Consejo de Estado
-                    </p>
-                    <ul class="features-list mb-4">
-                        <li><i class="fas fa-check"></i> Búsqueda por sala de decisión</li>
-                        <li><i class="fas fa-check"></i> Filtros por fecha</li>
-                        <li><i class="fas fa-check"></i> Descarga de ZIP</li>
-                        <li><i class="fas fa-check"></i> Exportación detallada</li>
-                    </ul>
-                    <div class="text-center">
-                        <a href="/consejo_estado" class="btn btn-access">
-                            <i class="fas fa-arrow-right"></i> Acceder
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Additional Info -->
-        <div class="row mt-5">
-            <div class="col-12">
-                <div class="scraper-card">
-                    <h4 class="mb-3"><i class="fas fa-info-circle"></i> Información Importante</h4>
-                    <div class="row">
-                        <div class="col-md-4">
-                            <h6><i class="fas fa-shield-alt text-primary"></i> Uso Responsable</h6>
-                            <p class="small text-muted">
-                                Este sistema debe ser utilizado de manera responsable y respetando los términos de uso de cada fuente de datos.
-                            </p>
-                        </div>
-                        <div class="col-md-4">
-                            <h6><i class="fas fa-clock text-warning"></i> Tiempos de Procesamiento</h6>
-                            <p class="small text-muted">
-                                Los tiempos de descarga pueden variar según la cantidad de documentos y la velocidad de respuesta de los servidores.
-                            </p>
-                        </div>
-                        <div class="col-md-4">
-                            <h6><i class="fas fa-database text-success"></i> Almacenamiento</h6>
-                            <p class="small text-muted">
-                                Los documentos descargados se almacenan localmente. Asegúrese de tener suficiente espacio disponible.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Footer -->
-        <div class="footer">
-            <p>&copy; 2024 Sistema Unificado de Scrapers Judiciales. Desarrollado para uso académico y de investigación.</p>
-        </div>
+      </div>
+      <div class="card-actions">
+        <a href="{{ url_for('jurisprudencia_filters') }}" class="btn btn-primary">
+          <i class="fas fa-search"></i>
+          Acceder
+        </a>
+      </div>
+      <div class="card-status">
+        <span class="status-badge status-active">Disponible</span>
+      </div>
     </div>
 
-    <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-</body>
-</html>
+    <!-- Tesauro -->
+    <div class="scraper-card active">
+      <div class="card-icon">
+        <i class="fas fa-book"></i>
+      </div>
+      <div class="card-content">
+        <h3>Tesauro Jurídico</h3>
+        <p>Superintendencia de Sociedades - Sistema de consulta de sentencias y conceptos</p>
+        <div class="card-stats">
+          <span><i class="fas fa-search"></i> Búsqueda avanzada</span>
+          <span><i class="fas fa-file-pdf"></i> Descarga PDFs</span>
+        </div>
+      </div>
+      <div class="card-actions">
+        <a href="{{ url_for('tesauro_filters') }}" class="btn btn-primary">
+          <i class="fas fa-search"></i>
+          Acceder
+        </a>
+      </div>
+      <div class="card-status">
+        <span class="status-badge status-active">Disponible</span>
+      </div>
+    </div>
+
+    <!-- Consejo de Estado  -->
+    <div class="scraper-card active">
+      <div class="card-icon">
+        <i class="fas fa-university"></i>
+      </div>
+      <div class="card-content">
+        <h3>Consejo de Estado</h3>
+        <p>Consulta de jurisprudencia contencioso administrativa y conceptos</p>
+        <div class="card-stats">
+          <span><i class="fas fa-balance-scale"></i> Derecho administrativo</span>
+          <span><i class="fas fa-file-contract"></i> Conceptos oficiales</span>
+        </div>
+      </div>
+      <div class="card-actions">
+        <a href="{{ url_for('consejo_estado_filters') }}" class="btn btn-primary">
+          <i class="fas fa-search"></i>
+          Acceder
+        </a>
+      </div>
+      <div class="card-status">
+
+          <span class="status-badge status-active">Disponible</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Información del Sistema -->
+  <div class="system-info">
+    <div class="card">
+      <div class="card-header">
+        <i class="fas fa-info-circle"></i>
+        <h3>Información del Sistema</h3>
+      </div>
+      <div class="info-grid">
+        <div class="info-item">
+          <i class="fas fa-code"></i>
+          <div>
+            <strong>Versión</strong>
+            <span>2.0.0 - Unificada</span>
+          </div>
+        </div>
+        <div class="info-item">
+          <i class="fas fa-shield-alt"></i>
+          <div>
+            <strong>Seguridad</strong>
+            <span>Conexiones HTTPS</span>
+          </div>
+        </div>
+        <div class="info-item">
+          <i class="fas fa-download"></i>
+          <div>
+            <strong>Descargas</strong>
+            <span>PDFs automáticos</span>
+          </div>
+        </div>
+        <div class="info-item">
+          <i class="fas fa-chart-line"></i>
+          <div>
+            <strong>Reportes</strong>
+            <span>JSON y CSV</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  /* Estilos específicos del dashboard */
+  .dashboard-header {
+    text-align: center;
+    margin-bottom: 3rem;
+  }
+
+  .dashboard-header h1 {
+    font-size: 2.5rem;
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+  }
+
+  .dashboard-header p {
+    font-size: 1.1rem;
+    color: var(--text-muted);
+  }
+
+  .scrapers-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+    gap: 2rem;
+    margin-bottom: 3rem;
+  }
+
+  .scraper-card {
+    background: var(--bg-card);
+    border-radius: var(--border-radius-lg);
+    padding: 2rem;
+    border: 2px solid var(--border);
+    transition: var(--transition);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .scraper-card.active:hover {
+    transform: translateY(-4px);
+    border-color: var(--accent-primary);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .scraper-card.disabled {
+    opacity: 0.6;
+    background: var(--bg-secondary);
+  }
+
+  .card-icon {
+    text-align: center;
+    margin-bottom: 1.5rem;
+  }
+
+  .card-icon i {
+    font-size: 3rem;
+    color: var(--accent-primary);
+  }
+
+  .scraper-card.disabled .card-icon i {
+    color: var(--text-muted);
+  }
+
+  .card-content h3 {
+    font-size: 1.5rem;
+    margin-bottom: 0.75rem;
+    color: var(--text-primary);
+    text-align: center;
+  }
+
+  .card-content p {
+    color: var(--text-secondary);
+    text-align: center;
+    margin-bottom: 1.5rem;
+    line-height: 1.6;
+  }
+
+  .card-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .card-stats span {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+  }
+
+  .card-stats i {
+    color: var(--accent-primary);
+    width: 1rem;
+  }
+
+  .card-actions {
+    text-align: center;
+    margin-bottom: 1rem;
+  }
+
+  .card-status {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+  }
+
+  .status-active {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--success);
+    border: 1px solid var(--success);
+  }
+
+  .status-coming-soon {
+    background: rgba(251, 191, 36, 0.1);
+    color: var(--warning);
+    border: 1px solid var(--warning);
+  }
+
+  .system-info {
+    margin-top: 3rem;
+  }
+
+  .info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+  }
+
+  .info-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    background: var(--bg-input);
+    border-radius: var(--border-radius);
+  }
+
+  .info-item i {
+    font-size: 1.5rem;
+    color: var(--accent-primary);
+  }
+
+  .info-item div {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .info-item strong {
+    color: var(--text-primary);
+    font-size: 0.875rem;
+  }
+
+  .info-item span {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .scrapers-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .dashboard-header h1 {
+      font-size: 2rem;
+    }
+
+    .info-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+{% endblock %}

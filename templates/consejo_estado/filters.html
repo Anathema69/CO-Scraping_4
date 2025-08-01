@@ -1,601 +1,270 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Consejo de Estado - SAMAI Scraper</title>
-    <!-- Bootstrap CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <!-- jQuery UI CSS para datepicker -->
-    <link rel="stylesheet" href="//code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css">
+{% extends "base.html" %}
 
-    <style>
-        body {
-            background-color: #f8f9fa;
-            padding-top: 20px;
-        }
-        .container {
-            max-width: 900px;
-        }
-        .header {
-            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
-            color: white;
-            padding: 30px;
-            border-radius: 10px;
-            margin-bottom: 30px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-        .filter-card {
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            padding: 30px;
-            margin-bottom: 20px;
-        }
-        .btn-search {
-            background-color: #3498db;
-            color: white;
-            padding: 12px 30px;
-            font-size: 16px;
-            border: none;
-            border-radius: 5px;
-            transition: all 0.3s;
-        }
-        .btn-search:hover {
-            background-color: #2980b9;
-            transform: translateY(-1px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-        }
-        .loading {
-            display: none;
-            text-align: center;
-            padding: 50px;
-        }
-        .results-section {
-            display: none;
-            margin-top: 30px;
-        }
-        .stat-card {
-            background: white;
-            border-radius: 10px;
-            padding: 20px;
-            text-align: center;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }
-        .stat-number {
-            font-size: 2.5em;
-            font-weight: bold;
-            color: #3498db;
-        }
-        .progress-section {
-            background: white;
-            border-radius: 10px;
-            padding: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-top: 20px;
-        }
-        .log-viewer {
-            background-color: #1e1e1e;
-            color: #d4d4d4;
-            padding: 20px;
-            border-radius: 5px;
-            font-family: 'Consolas', 'Monaco', monospace;
-            font-size: 12px;
-            height: 400px;
-            overflow-y: auto;
-            margin-top: 20px;
-        }
-        .error-item {
-            background-color: #fee;
-            border-left: 4px solid #dc3545;
-            padding: 10px;
-            margin-bottom: 10px;
-            border-radius: 4px;
-        }
-        .section-title {
-            color: #2c3e50;
-            font-weight: 600;
-            margin-bottom: 20px;
-            padding-bottom: 10px;
-            border-bottom: 2px solid #ecf0f1;
-        }
-        .test-notice {
-            background-color: #fff3cd;
-            border-left: 4px solid #ffc107;
-            padding: 15px;
-            margin-bottom: 20px;
-            border-radius: 4px;
-        }
-        .test-notice h5 {
-            color: #856404;
-            margin-bottom: 10px;
-        }
-        .test-notice ul {
-            margin-bottom: 0;
-            padding-left: 20px;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <!-- Header -->
-        <div class="header text-center">
-            <h1><i class="fas fa-gavel"></i> Consejo de Estado - SAMAI</h1>
-            <p class="mb-0">Sistema de búsqueda y descarga de providencias judiciales</p>
+{% block title %}Consejo de Estado - Sistema de Scraping Judicial{% endblock %}
+
+{% block nav_links %}
+{{ super() }}
+<a href="{{ url_for('consejo_estado_filters') }}" class="nav-link active">
+  <i class="fas fa-gavel"></i>
+  Consejo de Estado
+</a>
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
+<style>
+  /* Reutiliza estilos tipo Tesauro */
+  .preview-panel {
+    background: var(--bg-card);
+    border-radius: var(--border-radius-lg);
+    padding: var(--spacing-xl);
+    margin-top: var(--spacing-lg);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-lg);
+    display: none;
+  }
+
+  .preview-item {
+    background: var(--bg-input);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+    transition: var(--transition);
+  }
+
+  .preview-item:hover {
+    transform: translateX(4px);
+    background: var(--bg-secondary);
+  }
+
+  .preview-title {
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: var(--spacing-sm);
+  }
+
+  .preview-meta {
+    display: flex;
+    gap: var(--spacing-lg);
+    flex-wrap: wrap;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+  }
+
+  .preview-meta span {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+  }
+
+  .floating-controls {
+    position: fixed;
+    top: 100px;
+    right: 20px;
+    z-index: 999;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .floating-controls .btn {
+    min-width: auto;
+    padding: 0.75rem;
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow-lg);
+    transition: all 0.3s ease;
+  }
+
+  .floating-controls .btn:hover {
+    transform: scale(1.1);
+  }
+
+  .floating-controls .btn::before {
+    content: attr(data-tooltip);
+    position: absolute;
+    right: 60px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow);
+  }
+
+  .floating-controls .btn:hover::before {
+    opacity: 1;
+  }
+
+  .action-buttons {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1.5rem;
+    flex-wrap: wrap;
+  }
+
+  .action-buttons .btn {
+    flex: 1;
+    min-width: 150px;
+  }
+
+  .btn-loading {
+    opacity: 0.7;
+    pointer-events: none;
+  }
+
+  @media (max-width: 768px) {
+    .floating-controls {
+      position: relative;
+      top: auto;
+      right: auto;
+      flex-direction: row;
+      justify-content: center;
+      margin: 1rem 0;
+    }
+    .action-buttons {
+      flex-direction: column;
+    }
+    .action-buttons .btn {
+      width: 100%;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+  <!-- Header -->
+  <div class="header">
+    <h1><i class="fas fa-gavel"></i> Consejo de Estado</h1>
+    <p>Sistema de Búsqueda y Descarga de Providencias</p>
+  </div>
+
+  <!-- Controles flotantes -->
+  <div class="floating-controls">
+    <button type="button" id="btn-cancel-search" class="btn btn-danger" style="display: none;"
+            data-tooltip="Cancelar búsqueda">
+      <i class="fas fa-times"></i>
+    </button>
+    <button type="button" id="btn-new-search" class="btn btn-info" style="display: none;"
+            data-tooltip="Nueva búsqueda">
+      <i class="fas fa-refresh"></i>
+    </button>
+  </div>
+
+  <form id="search-form">
+    <!-- Filtros principales -->
+    <div class="card">
+      <div class="card-header">
+        <i class="fas fa-filter"></i>
+        <h3>Filtros de Búsqueda</h3>
+      </div>
+       <div class="form-grid two-col" style="gap: 1rem; margin-top: var(--spacing-lg);">
+        <div class="field">
+          <label class="field-label" for="sala-decision">
+            <i class="fas fa-university"></i>
+            Sala de decisión
+          </label>
+          <select id="sala-decision" name="sala_decision" class="form-control" required>
+            <option value="">-- Selecciona sala --</option>
+            <option value="Sección Primera">Sección Primera</option>
+            <option value="Sección Segunda">Sección Segunda</option>
+            <option value="Sección Tercera">Sección Tercera</option>
+            <option value="Sección Cuarta">Sección Cuarta</option>
+            <option value="Sección Quinta">Sección Quinta</option>
+          </select>
         </div>
-
-        <!-- Aviso de Prueba -->
-        <div class="test-notice">
-            <h5><i class="fas fa-info-circle"></i> Modo de Prueba Activo</h5>
-            <ul>
-                <li>Limitado a máximo 2 páginas de resultados</li>
-                <li>Limitado a máximo 5 descargas de archivos ZIP</li>
-                <li>Ideal para verificar funcionamiento antes de búsquedas extensas</li>
-            </ul>
+        <div class="field">
+          <label class="field-label" for="fecha-desde">
+            <i class="fas fa-calendar-plus"></i>
+            Fecha desde
+          </label>
+          <input type="text" id="fecha-desde" name="fecha_desde" placeholder="Seleccione fecha inicial" required>
         </div>
-
-        <!-- Filtros -->
-        <div class="filter-card">
-            <h3 class="section-title"><i class="fas fa-filter"></i> Filtros de Búsqueda</h3>
-
-            <form id="searchForm">
-                <div class="row">
-                    <!-- Sala de Decisión -->
-                    <div class="col-md-12 mb-3">
-                        <label for="sala_decision" class="form-label">
-                            <i class="fas fa-balance-scale"></i> Sala de Decisión
-                        </label>
-                        <select class="form-select" id="sala_decision" name="sala_decision" required>
-                            <option value="">Seleccione una sala...</option>
-                            <option value="Plena">Plena</option>
-                            <option value="Plena de lo Contencioso Administrativo">Plena de lo Contencioso Administrativo</option>
-                            <option value="Sala de Consulta y Servicio Civil">Sala de Consulta y Servicio Civil</option>
-                            <option value="Sección Primera">Sección Primera</option>
-                            <option value="Sección Segunda">Sección Segunda</option>
-                            <option value="Sección Tercera">Sección Tercera</option>
-                            <option value="Sección Cuarta" selected>Sección Cuarta</option>
-                            <option value="Sección Quinta">Sección Quinta</option>
-                        </select>
-                    </div>
-
-                    <!-- Fechas -->
-                    <div class="col-md-6 mb-3">
-                        <label for="fecha_desde" class="form-label">
-                            <i class="fas fa-calendar-alt"></i> Fecha Desde
-                        </label>
-                        <input type="text" class="form-control" id="fecha_desde" name="fecha_desde"
-                               placeholder="DD/MM/YYYY" required>
-                    </div>
-
-                    <div class="col-md-6 mb-3">
-                        <label for="fecha_hasta" class="form-label">
-                            <i class="fas fa-calendar-alt"></i> Fecha Hasta
-                        </label>
-                        <input type="text" class="form-control" id="fecha_hasta" name="fecha_hasta"
-                               placeholder="DD/MM/YYYY" required>
-                    </div>
-
-                    <!-- Configuración de prueba (oculta) -->
-                    <input type="hidden" id="download_pdfs" name="download_pdfs" value="true">
-                    <input type="hidden" id="max_results" name="max_results" value="5">
-                    <input type="hidden" id="max_workers" name="max_workers" value="1">
-                </div>
-
-                <!-- Opciones Avanzadas -->
-                <div class="alert alert-info mt-3">
-                    <i class="fas fa-cog"></i> <strong>Configuración de Prueba:</strong>
-                    <ul class="mb-0 mt-2">
-                        <li>Descargar archivos ZIP: <strong>Sí</strong></li>
-                        <li>Máximo de descargas: <strong>5 archivos</strong></li>
-                        <li>Workers paralelos: <strong>1 (secuencial)</strong></li>
-                    </ul>
-                </div>
-
-                <!-- Botones -->
-                <div class="text-center mt-4">
-                    <button type="button" class="btn btn-secondary me-2" id="previewBtn">
-                        <i class="fas fa-eye"></i> Vista Previa (5 resultados)
-                    </button>
-                    <button type="submit" class="btn btn-search">
-                        <i class="fas fa-search"></i> Buscar y Procesar
-                    </button>
-                </div>
-            </form>
+        <div class="field">
+          <label class="field-label" for="fecha-hasta">
+            <i class="fas fa-calendar-minus"></i>
+            Fecha hasta
+          </label>
+          <input type="text" id="fecha-hasta" name="fecha_hasta" placeholder="Seleccione fecha final" required>
         </div>
+      </div>
 
-        <!-- Loading -->
-        <div class="loading">
-            <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status">
-                <span class="visually-hidden">Cargando...</span>
-            </div>
-            <p class="mt-3">Procesando búsqueda...</p>
-        </div>
+      <!-- Hidden defaults -->
+      <input type="hidden" name="max_workers" id="max-workers" value="3">
+      <input type="hidden" name="download_pdfs" value="true">
 
-        <!-- Resultados -->
-        <div class="results-section">
-            <!-- Estadísticas -->
-            <div class="row" id="statsContainer">
-                <div class="col-md-3">
-                    <div class="stat-card">
-                        <div class="stat-number" id="totalResults">0</div>
-                        <div>Total Resultados</div>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div class="stat-card">
-                        <div class="stat-number" id="totalPages">0</div>
-                        <div>Total Páginas</div>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div class="stat-card">
-                        <div class="stat-number text-success" id="successfulDownloads">0</div>
-                        <div>Descargas Exitosas</div>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div class="stat-card">
-                        <div class="stat-number text-danger" id="failedDownloads">0</div>
-                        <div>Descargas Fallidas</div>
-                    </div>
-                </div>
-            </div>
 
-            <!-- Progreso -->
-            <div class="progress-section">
-                <h5><i class="fas fa-tasks"></i> Progreso</h5>
-                <div class="progress" style="height: 30px;">
-                    <div class="progress-bar progress-bar-striped progress-bar-animated"
-                         role="progressbar" id="progressBar" style="width: 0%">0%</div>
-                </div>
-                <p class="mt-2 mb-0" id="progressText">Iniciando proceso...</p>
-            </div>
-
-            <!-- Botones de acción -->
-            <div class="text-center mt-4">
-                <button class="btn btn-danger" id="cancelBtn" style="display:none;">
-                    <i class="fas fa-stop"></i> Cancelar Proceso
-                </button>
-                <button class="btn btn-success" id="downloadCsvBtn" style="display:none;">
-                    <i class="fas fa-file-csv"></i> Descargar CSV
-                </button>
-                <button class="btn btn-info" id="viewLogsBtn">
-                    <i class="fas fa-file-alt"></i> Ver Logs
-                </button>
-            </div>
-
-            <!-- Errores -->
-            <div class="mt-4" id="errorsSection" style="display:none;">
-                <h5><i class="fas fa-exclamation-triangle"></i> Errores de Descarga</h5>
-                <div id="errorsList"></div>
-            </div>
-
-            <!-- Visor de logs -->
-            <div class="log-viewer" id="logViewer" style="display:none;">
-                <pre id="logContent">Esperando logs...</pre>
-            </div>
-        </div>
     </div>
 
-    <!-- Scripts -->
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Botones de acción -->
+        <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+      <button type="button" id="btn-search" class="btn btn-primary btn-full">
+        <i class="fas fa-search"></i> Iniciar Búsqueda
+      </button>
+      <button type="button" id="btn-download-manifest" class="btn btn-secondary" style="display: none;">
+        <i class="fas fa-download"></i> Descargar Manifiesto (JSON)
+      </button>
+    </div>
 
-    <script>
-        // Variables globales
-        let currentTimestamp = null;
-        let updateInterval = null;
-        let logUpdateInterval = null;
+  </form>
 
-        // Configurar datepickers
-        $(function() {
-            $("#fecha_desde, #fecha_hasta").datepicker({
-                dateFormat: 'dd/mm/yy',
-                changeMonth: true,
-                changeYear: true,
-                maxDate: 0
-            });
+  <!-- Panel de vista previa -->
+  <div id="preview-panel" class="preview-panel">
+    <div class="card-header">
+      <i class="fas fa-eye"></i>
+      <h3>Vista Previa de Resultados</h3>
+    </div>
+    <div id="preview-content"></div>
+  </div>
 
-            // Establecer fechas por defecto (último mes)
-            const hoy = new Date();
-            const haceUnMes = new Date();
-            haceUnMes.setMonth(hoy.getMonth() - 1);
+  <!-- Panel de resultados -->
+  <div id="results-panel" class="results-panel" style="display: none;">
+    <div class="card-header">
+      <i class="fas fa-clipboard-list"></i>
+      <h3>Estado del Scraping</h3>
+    </div>
+    <div id="status-content"></div>
+    <div class="action-buttons">
+      <button type="button" id="btn-check-status" class="btn btn-secondary">
+        <i class="fas fa-sync-alt"></i> Actualizar Estado
+      </button>
+      <button type="button" id="btn-download-manifest" class="btn btn-primary" style="display: none;">
+        <i class="fas fa-download"></i> Descargar Manifiesto (JSON)
+      </button>
+    </div>
+  </div>
+</div>
 
-            $("#fecha_desde").datepicker('setDate', haceUnMes);
-            $("#fecha_hasta").datepicker('setDate', hoy);
-        });
+<!-- Loader -->
+<div id="loader-overlay" class="loader-overlay" style="display: none;">
+  <div class="loader-content">
+    <div class="spinner"></div>
+    <p id="loader-text">Procesando...</p>
+  </div>
+</div>
+{% endblock %}
 
-        // Vista previa
-        $('#previewBtn').click(function() {
-            const formData = {
-                sala_decision: $('#sala_decision').val(),
-                fecha_desde: $('#fecha_desde').val(),
-                fecha_hasta: $('#fecha_hasta').val()
-            };
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/es.js"></script>
+<script src="{{ url_for('static', filename='js/consejo_estado.js') }}"></script>
+<script>
+  // Inicializa flatpickr
+  flatpickr("#fecha-desde", { locale: "es", dateFormat: "d/m/Y" });
+  flatpickr("#fecha-hasta", { locale: "es", dateFormat: "d/m/Y" });
 
-            if (!validateForm()) {
-                return;
-            }
-
-            $('.loading').show();
-            $('.results-section').hide();
-
-            $.ajax({
-                url: '/consejo_estado/preview',
-                method: 'POST',
-                data: formData,
-                success: function(response) {
-                    $('.loading').hide();
-
-                    if (response.status === 'success') {
-                        // Mostrar información sin alert
-                        $('#progressText').text(`Se encontraron documentos. Mostrando primeros 5:`);
-                        $('.results-section').show();
-
-                        // Mostrar los documentos en el área de resultados
-                        let previewHtml = '<div class="mt-3"><h5>Vista Previa:</h5><ol>';
-                        response.preview.forEach((doc, idx) => {
-                            previewHtml += `<li>${doc.numero_proceso} - ${doc.titular}</li>`;
-                        });
-                        previewHtml += '</ol></div>';
-                        $('#progressText').after(previewHtml);
-                    } else {
-                        $('#progressText').text('Error: ' + response.message);
-                        $('.results-section').show();
-                    }
-                },
-                error: function(xhr) {
-                    $('.loading').hide();
-                    $('#progressText').text('Error al obtener vista previa');
-                    $('.results-section').show();
-                }
-            });
-        });
-
-        // Formulario principal
-        $('#searchForm').submit(function(e) {
-            e.preventDefault();
-
-            if (!validateForm()) {
-                return;
-            }
-
-            const formData = {
-                sala_decision: $('#sala_decision').val(),
-                fecha_desde: $('#fecha_desde').val(),
-                fecha_hasta: $('#fecha_hasta').val(),
-                download_pdfs: $('#download_pdfs').is(':checked'),
-                max_results: $('#max_results').val() || null,
-                max_workers: $('#max_workers').val() || 3
-            };
-
-            $('.loading').show();
-            $('.results-section').hide();
-            $('#cancelBtn').show();
-            $('#downloadCsvBtn').hide();
-
-            $.ajax({
-                url: '/consejo_estado/start_scraping',
-                method: 'POST',
-                data: formData,
-                success: function(response) {
-                    $('.loading').hide();
-
-                    if (response.status === 'started') {
-                        currentTimestamp = response.timestamp;
-                        $('.results-section').show();
-                        startStatusUpdates();
-
-                        // Mostrar info inicial
-                        $('#progressText').text(`Proceso iniciado. Buscando en ${formData.sala_decision}...`);
-                    } else {
-                        $('#progressText').text('Error: ' + response.message);
-                        $('.results-section').show();
-                    }
-                },
-                error: function(xhr) {
-                    $('.loading').hide();
-                    $('#progressText').text('Error al iniciar el proceso');
-                    $('.results-section').show();
-                }
-            });
-        });
-
-        // Cancelar proceso
-        $('#cancelBtn').click(function() {
-            if (!currentTimestamp) return;
-
-            if (confirm('¿Está seguro de cancelar el proceso?')) {
-                $.ajax({
-                    url: `/consejo_estado/cancel_scraping/${currentTimestamp}`,
-                    method: 'POST',
-                    success: function(response) {
-                        stopStatusUpdates();
-                        $('#progressText').text('Proceso cancelado por el usuario');
-                        $('#cancelBtn').hide();
-                        $('#progressText').text('Proceso cancelado correctamente');
-                    }
-                });
-            }
-        });
-
-        // Descargar CSV
-        $('#downloadCsvBtn').click(function() {
-            if (currentTimestamp) {
-                window.location.href = `/consejo_estado/download_csv/${currentTimestamp}`;
-            }
-        });
-
-        // Ver logs
-        $('#viewLogsBtn').click(function() {
-            const $logViewer = $('#logViewer');
-            if ($logViewer.is(':visible')) {
-                $logViewer.hide();
-                stopLogUpdates();
-            } else {
-                $logViewer.show();
-                startLogUpdates();
-            }
-        });
-
-        // Funciones auxiliares
-        function validateForm() {
-            let valid = true;
-            let message = '';
-
-            if (!$('#sala_decision').val()) {
-                message = 'Por favor seleccione una sala de decisión';
-                valid = false;
-            } else if (!$('#fecha_desde').val() || !$('#fecha_hasta').val()) {
-                message = 'Por favor seleccione las fechas';
-                valid = false;
-            }
-
-            if (!valid) {
-                $('#progressText').text(message);
-                $('.results-section').show();
-            }
-
-            return valid;
-        }
-
-        function startStatusUpdates() {
-            updateStatus(); // Primera actualización inmediata
-            updateInterval = setInterval(updateStatus, 2000); // Cada 2 segundos
-        }
-
-        function stopStatusUpdates() {
-            if (updateInterval) {
-                clearInterval(updateInterval);
-                updateInterval = null;
-            }
-            stopLogUpdates();
-        }
-
-        function startLogUpdates() {
-            updateLogs(); // Primera actualización
-            logUpdateInterval = setInterval(updateLogs, 3000); // Cada 3 segundos
-        }
-
-        function stopLogUpdates() {
-            if (logUpdateInterval) {
-                clearInterval(logUpdateInterval);
-                logUpdateInterval = null;
-            }
-        }
-
-        function updateStatus() {
-            if (!currentTimestamp) return;
-
-            $.ajax({
-                url: `/consejo_estado/status/${currentTimestamp}`,
-                method: 'GET',
-                success: function(response) {
-                    if (response.status === 'success') {
-                        updateUI(response);
-                    }
-                },
-                error: function() {
-                    console.error('Error obteniendo estado');
-                }
-            });
-        }
-
-        function updateLogs() {
-            if (!currentTimestamp) return;
-
-            $.ajax({
-                url: `/logs/consejo_estado/${currentTimestamp}/consejo_estado_scraping.log`,
-                method: 'GET',
-                success: function(data) {
-                    const lines = data.split('\n');
-                    const lastLines = lines.slice(-50).join('\n');
-                    $('#logContent').text(lastLines);
-
-                    // Auto-scroll al final
-                    const logViewer = document.getElementById('logViewer');
-                    logViewer.scrollTop = logViewer.scrollHeight;
-                }
-            });
-        }
-
-        function updateUI(data) {
-            // Actualizar estadísticas del manifiesto
-            if (data.manifest) {
-                $('#totalResults').text(data.manifest.total_resultados || 0);
-                $('#totalPages').text(data.manifest.total_paginas || 0);
-            }
-
-            // Actualizar desde el reporte final si existe
-            if (data.final_report) {
-                const resumen = data.final_report.resumen;
-
-                $('#totalResults').text(resumen.total_documentos || 0);
-                $('#successfulDownloads').text(resumen.descargas_exitosas || 0);
-                $('#failedDownloads').text(resumen.descargas_fallidas || 0);
-
-                // Calcular progreso
-                const total = resumen.total_documentos || 0;
-                const procesados = (resumen.descargas_exitosas || 0) + (resumen.descargas_fallidas || 0);
-                const porcentaje = total > 0 ? Math.round((procesados / total) * 100) : 0;
-
-                $('#progressBar').css('width', porcentaje + '%').text(porcentaje + '%');
-
-                // Mostrar errores si hay
-                if (data.final_report.errores_descarga && data.final_report.errores_descarga.length > 0) {
-                    mostrarErrores(data.final_report.errores_descarga);
-                }
-
-                // Proceso completado
-                $('#progressText').text(`Proceso completado en ${resumen.tiempo_total}`);
-                $('#cancelBtn').hide();
-                $('#downloadCsvBtn').show();
-                stopStatusUpdates();
-            }
-
-            // Actualizar desde archivos existentes
-            if (data.files) {
-                if (data.files.results_csv_exists) {
-                    $('#downloadCsvBtn').show();
-                }
-            }
-
-            // Leer últimas líneas del log para el progreso
-            if (data.log_tail && data.log_tail.length > 0) {
-                const lastLogLine = data.log_tail[data.log_tail.length - 1];
-                if (lastLogLine.includes('PÁGINA')) {
-                    const match = lastLogLine.match(/PÁGINA (\d+)\/(\d+)/);
-                    if (match) {
-                        $('#progressText').text(`Procesando página ${match[1]} de ${match[2]}`);
-                    }
-                }
-            }
-        }
-
-        function mostrarErrores(errores) {
-            $('#errorsSection').show();
-            const $errorsList = $('#errorsList');
-            $errorsList.empty();
-
-            errores.forEach(error => {
-                $errorsList.append(`
-                    <div class="error-item">
-                        <strong>Documento ${error.documento}</strong> (Posición ${error.posicion})<br>
-                        Error: ${error.error}
-                    </div>
-                `);
-            });
-        }
-
-        // Limpiar al cargar la página
-        $(document).ready(function() {
-            currentTimestamp = null;
-            stopStatusUpdates();
-        });
-    </script>
-</body>
-</html>
+  // Puedes agregar funciones similares a tesauro.js para manejo de preview/search
+</script>
+{% endblock %}
