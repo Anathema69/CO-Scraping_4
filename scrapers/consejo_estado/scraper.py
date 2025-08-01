@@ -1,15 +1,18 @@
+# scrapers/consejo_estado/scraper.py
 import time
 import json
+import csv
 from datetime import datetime
 from pathlib import Path
 import logging
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import re
 import urllib.parse
 import requests
 from bs4 import BeautifulSoup
+from .data_extractor import SAMAIDataExtractor
 
 
 class ConsejoEstadoScraper:
@@ -22,6 +25,9 @@ class ConsejoEstadoScraper:
         self.log_dir = Path(f"logs/consejo_estado_{self.timestamp}")
         self.pdf_dir = Path("descargas_consejo_estado")
         self.manifest_path = self.log_dir / "manifest.json"
+        self.csv_path = self.log_dir / f"consejo_estado_resultados_{self.timestamp}.csv"
+        self.report_path = self.log_dir / "reporte_final.json"
+
         self.setup_directories()
         self.setup_logging()
 
@@ -34,6 +40,9 @@ class ConsejoEstadoScraper:
 
         self.all_results: List[Dict] = []
         self.lock = threading.Lock()
+        self.start_time = None
+        self.total_esperados = 0
+        self.data_extractor = SAMAIDataExtractor()
 
     def setup_directories(self):
         self.log_dir.mkdir(parents=True, exist_ok=True)
@@ -53,21 +62,84 @@ class ConsejoEstadoScraper:
 
         root_logger = logging.getLogger()
         root_logger.setLevel(logging.INFO)
-        # evitar duplicados
-        if not any(isinstance(h, logging.FileHandler) and h.baseFilename == str(log_file) for h in root_logger.handlers):
-            root_logger.addHandler(file_handler)
-        if not any(isinstance(h, logging.StreamHandler) for h in root_logger.handlers):
-            root_logger.addHandler(console_handler)
+
+        # Evitar duplicados
+        root_logger.handlers.clear()
+        root_logger.addHandler(file_handler)
+        root_logger.addHandler(console_handler)
 
         self.logger = logging.getLogger(__name__)
 
     def save_manifest(self):
+        """Guardar manifiesto JSON actualizado"""
         with self.lock:
             try:
+                manifest_data = {
+                    'timestamp': self.timestamp,
+                    'total_esperados': self.total_esperados,
+                    'total_procesados': len(self.all_results),
+                    'estado': 'en_proceso',
+                    'resultados': self.all_results
+                }
                 with open(self.manifest_path, 'w', encoding='utf-8') as f:
-                    json.dump(self.all_results, f, ensure_ascii=False, indent=2)
+                    json.dump(manifest_data, f, ensure_ascii=False, indent=2)
             except Exception as e:
-                self.logger.error(f"No se pudo guardar el manifiesto: {e}")
+                self.logger.error(f"Error guardando manifiesto: {e}")
+
+    def save_csv(self):
+        """Guardar resultados en formato CSV"""
+        with self.lock:
+            try:
+                with open(self.csv_path, 'w', newline='', encoding='utf-8') as f:
+                    if not self.all_results:
+                        return
+
+                    # Definir campos del CSV
+                    fieldnames = [
+                        'pagina', 'indice_en_pagina', 'numero_proceso', 'interno',
+                        'fecha_proceso', 'fecha_providencia', 'clase_proceso',
+                        'tipo_providencia', 'titular', 'sala_decision', 'actor',
+                        'demandado', 'estado_descarga', 'nombre_archivo',
+                        'tamaño_archivo', 'error', 'token'
+                    ]
+
+                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    writer.writeheader()
+
+                    for result in self.all_results:
+                        # Crear fila con solo los campos definidos
+                        row = {field: result.get(field, '') for field in fieldnames}
+                        writer.writerow(row)
+
+                self.logger.info(f"CSV guardado: {self.csv_path}")
+            except Exception as e:
+                self.logger.error(f"Error guardando CSV: {e}")
+
+    def obtener_total_resultados(self, sala_decision: str, fecha_desde: str, fecha_hasta: str) -> int:
+        """Obtener el total de resultados esperados para los filtros dados"""
+        try:
+            url = self.construir_url_busqueda(sala_decision, fecha_desde, fecha_hasta, 0)
+            response = self.session.get(url, timeout=30)
+            response.raise_for_status()
+
+            soup = BeautifulSoup(response.text, 'html.parser')
+
+            # Buscar el span que contiene el total
+            total_label = soup.find('span', {'id': 'ContentPlaceHolder1_LblCantidadTotal'})
+            if total_label:
+                total_text = total_label.text.strip()
+                # Extraer número del texto
+                total_match = re.search(r'\d+', total_text)
+                if total_match:
+                    return int(total_match.group())
+
+            # Si no encontramos el label específico, usar el extractor
+            total, _ = self.data_extractor.extraer_info_paginacion(response.text)
+            return total
+
+        except Exception as e:
+            self.logger.error(f"Error obteniendo total de resultados: {e}")
+            return 0
 
     def construir_filtro_odata(self, sala_decision: str, fecha_desde: str, fecha_hasta: str) -> str:
         try:
@@ -84,7 +156,8 @@ class ConsejoEstadoScraper:
                  f"( FechaProvidencia ge {fecha_desde_str} and FechaProvidencia le {fecha_hasta_str})"
         return filtro
 
-    def construir_url_busqueda(self, sala_decision: str, fecha_desde: str, fecha_hasta: str, pagina_actual: int = 0) -> str:
+    def construir_url_busqueda(self, sala_decision: str, fecha_desde: str, fecha_hasta: str,
+                               pagina_actual: int = 0) -> str:
         filtro = self.construir_filtro_odata(sala_decision, fecha_desde, fecha_hasta)
         busqueda_dict = {
             "corporacion": "1100103",
@@ -98,132 +171,6 @@ class ConsejoEstadoScraper:
         json_str = json.dumps(busqueda_dict, separators=(',', ':'))
         encoded = urllib.parse.quote(json_str)
         return f"{self.SEARCH_URL}?BusquedaDictionary={encoded}&"
-
-    def extraer_documentos_con_tokens(self, html: str, pagina: int) -> List[Dict]:
-        soup = BeautifulSoup(html, 'html.parser')
-        documentos = []
-
-        # Busca los links que cargan ventana, de donde se extrae el token
-        ver_doc_links = soup.find_all('a', onclick=re.compile(r'CargarVentana'))
-        for idx, link in enumerate(ver_doc_links):
-            try:
-                onclick = link.get('onclick', '')
-                token_match = re.search(r'tokenDocumento=([^\']+)', onclick)
-                if not token_match:
-                    continue
-                token = token_match.group(1)
-
-                # Buscar contenedor padre para campos adicionales
-                parent = link.find_parent('div', class_='row') or link.find_parent('tr') or link
-                doc_info = {
-                    'token': token,
-                    'numero_proceso': '',
-                    'interno': '',
-                    'fecha_proceso': '',
-                    'clase_proceso': '',
-                    'titular': '',
-                    'sala_decision': '',
-                    'fecha_providencia': '',
-                    'tipo_providencia': '',
-                    'actor': '',
-                    'demandado': '',
-                    # Descarga
-                    'estado_descarga': None,  # null por defecto
-                    'nombre_archivo': None,
-                    'tamaño_archivo': None,
-                    'error': None,
-                    'ruta_zip': None,
-                    'pagina': pagina,
-                    'indice_en_pagina': idx,
-                    'worker': None
-                }
-
-                # Radicado (número del proceso) desde el enlace correspondiente
-                radicado_anchor = parent.find('a', id=re.compile(r'HypRadicado'))
-                if radicado_anchor:
-                    doc_info['numero_proceso'] = radicado_anchor.text.strip()
-
-                # Interno
-                interno = parent.find('span', id=re.compile(r'LblInterno'))
-                if interno:
-                    doc_info['interno'] = interno.text.strip()
-
-                # Fecha proceso
-                fecha_proc = parent.find('span', id=re.compile(r'LblFECHAPROC'))
-                if fecha_proc:
-                    doc_info['fecha_proceso'] = fecha_proc.text.strip()
-
-                # Clase del proceso
-                clase_proc = parent.find('span', id=re.compile(r'LblClaseProceso'))
-                if clase_proc:
-                    doc_info['clase_proceso'] = clase_proc.text.strip()
-
-                # Titular / Ponente
-                titular = parent.find('span', id=re.compile(r'LblPonente'))
-                if titular:
-                    doc_info['titular'] = titular.text.strip()
-
-                # Sala de decisión
-                sala = parent.find('span', id=re.compile(r'LbNombreSalaDecision'))
-                if sala:
-                    doc_info['sala_decision'] = sala.text.strip()
-
-                # Actor
-                actor = parent.find('span', id=re.compile(r'LblActor'))
-                if actor:
-                    doc_info['actor'] = actor.text.strip()
-
-                # Demandado
-                demandado = parent.find('span', id=re.compile(r'LblDemandado'))
-                if demandado:
-                    doc_info['demandado'] = demandado.text.strip()
-
-                # Tipo de providencia
-                tipo = parent.find('span', id=re.compile(r'LblTIPOPROVIDENCIA'))
-                if tipo:
-                    doc_info['tipo_providencia'] = tipo.text.strip()
-
-                # Fecha de providencia (puede venir en otro span)
-                providencia = parent.find('span', id=re.compile(r'Label1'))
-                if providencia:
-                    doc_info['fecha_providencia'] = providencia.text.strip()
-
-                documentos.append(doc_info)
-            except Exception as e:
-                self.logger.warning(f"Error extrayendo documento en página {pagina}, índice {idx}: {e}")
-                continue
-
-        if not documentos:
-            tabla = soup.find('table', {'class': 'table'})
-            if tabla:
-                filas = tabla.find_all('tr')[1:]
-                for idx, fila in enumerate(filas):
-                    link = fila.find('a', onclick=re.compile(r'CargarVentana'))
-                    if link:
-                        onclick = link.get('onclick', '')
-                        token_match = re.search(r'tokenDocumento=([^\']+)', onclick)
-                        if token_match:
-                            token = token_match.group(1)
-                            doc_info = {
-                                'token': token,
-                                'numero_proceso': '',
-                                'interno': '',
-                                'estado_descarga': None,
-                                'nombre_archivo': None,
-                                'tamaño_archivo': None,
-                                'error': None,
-                                'ruta_zip': None,
-                                'pagina': pagina,
-                                'indice_en_pagina': idx,
-                                'worker': None
-                            }
-                            celdas = fila.find_all('td')
-                            if len(celdas) >= 1:
-                                doc_info['numero_proceso'] = celdas[0].text.strip()
-                            documentos.append(doc_info)
-
-        self.logger.info(f"Se extrajeron {len(documentos)} documentos en página {pagina}")
-        return documentos
 
     def obtener_pagina_providencia(self, token: str) -> Optional[str]:
         url = f"{self.VER_PROVIDENCIA_URL}?tokenDocumento={token}"
@@ -284,16 +231,13 @@ class ConsejoEstadoScraper:
             if match:
                 return match.group(1)
             else:
-                debug_path = self.log_dir / f"debug_no_zip_{token[:8]}.html"
-                with open(debug_path, 'w', encoding='utf-8') as f:
-                    f.write(response.text)
                 self.logger.error(f"No se encontró URL de descarga en la respuesta del token {token}")
                 return None
         except Exception as e:
             self.logger.error(f"Error obteniendo URL de descarga ZIP para token {token}: {e}")
             return None
 
-    def descargar_zip(self, url_descarga: str, numero_proceso: str) -> (Optional[str], int):
+    def descargar_zip(self, url_descarga: str, numero_proceso: str) -> Tuple[Optional[str], int]:
         try:
             headers = {
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -332,12 +276,13 @@ class ConsejoEstadoScraper:
     def procesar_documento(self, doc: Dict) -> Dict:
         token = doc.get('token')
         numero_proceso = doc.get('numero_proceso') or doc.get('interno', 'Sin número')
+
         if not token:
             doc['estado_descarga'] = 'error'
             doc['error'] = 'Falta token'
             return doc
 
-        self.logger.info(f"[Worker {threading.get_ident()}] Procesando documento {numero_proceso}")
+        self.logger.info(f"[Worker {threading.get_ident()}] Procesando {numero_proceso}")
         doc['worker'] = threading.get_ident()
 
         html_providencia = self.obtener_pagina_providencia(token)
@@ -369,23 +314,109 @@ class ConsejoEstadoScraper:
 
     def _register_result(self, doc: Dict):
         with self.lock:
-            # Evita duplicados por token+indice: reemplaza si ya existe
-            existing = next((r for r in self.all_results if r.get('token') == doc.get('token') and
+            # Evitar duplicados por token+indice
+            existing = next((r for r in self.all_results if
+                             r.get('token') == doc.get('token') and
                              r.get('indice_en_pagina') == doc.get('indice_en_pagina') and
                              r.get('pagina') == doc.get('pagina')), None)
             if existing:
                 existing.update(doc)
             else:
                 self.all_results.append(doc)
+
+        # Guardar manifiesto y CSV actualizados
         self.save_manifest()
-        self.logger.info(f"Registro actualizado: proceso {doc.get('numero_proceso')} estado={doc.get('estado_descarga')}")
+        self.save_csv()
+
+        self.logger.info(f"Registro actualizado: {doc.get('numero_proceso')} - Estado: {doc.get('estado_descarga')}")
+
+    def generar_reporte_final(self):
+        """Generar reporte final con estadísticas"""
+        try:
+            duracion = (datetime.now() - datetime.fromisoformat(
+                self.start_time)).total_seconds() if self.start_time else 0
+
+            # Calcular estadísticas
+            total_documentos = len(self.all_results)
+            descargados = sum(1 for d in self.all_results if d.get('estado_descarga') == 'descargado')
+            errores = sum(1 for d in self.all_results if d.get('estado_descarga') == 'error')
+            omitidos = sum(1 for d in self.all_results if d.get('estado_descarga') == 'omitido')
+
+            # Calcular tamaño total
+            tamaño_total = sum(d.get('tamaño_archivo', 0) for d in self.all_results if d.get('tamaño_archivo'))
+
+            reporte = {
+                'timestamp': self.timestamp,
+                'fecha_inicio': self.start_time,
+                'fecha_fin': datetime.now().isoformat(),
+                'duracion_segundos': duracion,
+                'duracion_formateada': f"{int(duracion // 60)}m {int(duracion % 60)}s",
+                'resumen': {
+                    'total_esperados': self.total_esperados,
+                    'total_documentos': total_documentos,
+                    'pdfs_descargados': descargados,
+                    'errores_descarga': errores,
+                    'omitidos': omitidos,
+                    'tamaño_total_bytes': tamaño_total,
+                    'tamaño_total_mb': round(tamaño_total / (1024 * 1024), 2) if tamaño_total > 0 else 0
+                },
+                'estadisticas_por_tipo': {
+                    'descargados': descargados,
+                    'errores': errores,
+                    'omitidos': omitidos
+                },
+                'archivos_generados': {
+                    'log': str(self.log_dir / 'consejo_estado_scraping.log'),
+                    'csv': str(self.csv_path),
+                    'manifest': str(self.manifest_path)
+                }
+            }
+
+            # Guardar reporte
+            with open(self.report_path, 'w', encoding='utf-8') as f:
+                json.dump(reporte, f, ensure_ascii=False, indent=2)
+
+            # Actualizar manifiesto con estado final
+            with self.lock:
+                manifest_data = {
+                    'timestamp': self.timestamp,
+                    'total_esperados': self.total_esperados,
+                    'total_procesados': total_documentos,
+                    'estado': 'completado',
+                    'reporte_final': reporte,
+                    'resultados': self.all_results
+                }
+                with open(self.manifest_path, 'w', encoding='utf-8') as f:
+                    json.dump(manifest_data, f, ensure_ascii=False, indent=2)
+
+            self.logger.info(f"Reporte final generado: {self.report_path}")
+            return reporte
+
+        except Exception as e:
+            self.logger.error(f"Error generando reporte final: {e}")
+            return None
 
     def search_and_download(self, filters: dict, download_pdfs: bool = True,
                             max_results: Optional[int] = None, max_workers: int = 3,
                             cancel_event: threading.Event = None) -> List[Dict]:
+        """
+        Buscar y descargar documentos del Consejo de Estado
+
+        Args:
+            filters: Diccionario con sala_decision, fecha_desde, fecha_hasta
+            download_pdfs: Si descargar los ZIPs
+            max_results: Límite de resultados (None = sin límite)
+            max_workers: Número de workers paralelos
+            cancel_event: Evento para cancelar el proceso
+
+        Returns:
+            Lista de resultados procesados
+        """
+        self.start_time = datetime.now().isoformat()
         start_time = datetime.now()
+
         self.logger.info("=" * 60)
-        self.logger.info("INICIANDO SCRAPER CONSEJO DE ESTADO (con manifest y paralelo)")
+        self.logger.info("INICIANDO SCRAPER CONSEJO DE ESTADO")
         self.logger.info(f"Filtros: {json.dumps(filters, ensure_ascii=False)}")
         self.logger.info(f"Workers: {max_workers}, Descargar ZIPs: {download_pdfs}")
         self.logger.info(f"Límite de resultados: {max_results if max_results else 'sin límite'}")
@@ -396,87 +427,132 @@ class ConsejoEstadoScraper:
         fecha_hasta = filters.get('fecha_hasta')
 
         if not all([sala, fecha_desde, fecha_hasta]):
-            self.logger.error("Faltan filtros obligatorios (sala_decision, fecha_desde, fecha_hasta)")
+            self.logger.error("Faltan filtros obligatorios")
             return []
+
+        # Obtener total de resultados esperados
+        self.total_esperados = self.obtener_total_resultados(sala, fecha_desde, fecha_hasta)
+        self.logger.info(f"Total de documentos esperados: {self.total_esperados}")
+
+        if self.total_esperados == 0:
+            self.logger.warning("No se encontraron documentos con los filtros especificados")
+            self.generar_reporte_final()
+            return []
+
+        # Guardar manifiesto inicial
+        self.save_manifest()
 
         resultados_finales = []
         documentos_vistos = set()
         pagina = 0
         obtenidos = 0
+        todos_documentos = []  # Recolectar todos los documentos primero
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = []
+        # FASE 1: Recolectar todos los documentos
+        self.logger.info("FASE 1: Recolectando información de documentos...")
 
-            while True:
-                if cancel_event and cancel_event.is_set():
-                    self.logger.info("Cancelado por el usuario durante paginación")
-                    break
+        while True:
+            if cancel_event and cancel_event.is_set():
+                self.logger.info("Cancelado por el usuario durante recolección")
+                break
 
-                url_busqueda = self.construir_url_busqueda(sala, fecha_desde, fecha_hasta, pagina)
-                self.logger.info(f"Obteniendo página {pagina}: {url_busqueda}")
-                try:
-                    response = self.session.get(url_busqueda, timeout=30)
-                    response.raise_for_status()
-                except Exception as e:
-                    self.logger.error(f"Error obteniendo página {pagina}: {e}")
-                    break
+            if max_results and obtenidos >= max_results:
+                self.logger.info("Se alcanzó el límite de resultados solicitado")
+                break
 
-                documentos = self.extraer_documentos_con_tokens(response.text, pagina)
-                if not documentos:
-                    self.logger.info("No hay documentos en esta página, finalizando.")
-                    break
+            url_busqueda = self.construir_url_busqueda(sala, fecha_desde, fecha_hasta, pagina)
+            self.logger.info(f"Obteniendo página {pagina + 1}")
 
-                nuevos = []
-                for d in documentos:
-                    token = d.get('token')
-                    key = (token, d.get('pagina'), d.get('indice_en_pagina'))
-                    if token and key not in documentos_vistos:
-                        documentos_vistos.add(key)
-                        nuevos.append(d)
+            try:
+                response = self.session.get(url_busqueda, timeout=30)
+                response.raise_for_status()
+            except Exception as e:
+                self.logger.error(f"Error obteniendo página {pagina}: {e}")
+                break
 
-                if not nuevos:
-                    self.logger.info("Todos los documentos de esta página ya fueron vistos.")
-                    break
+            documentos = self.data_extractor.extraer_documentos_con_tokens(response.text)
 
-                for doc in nuevos:
+            if not documentos:
+                self.logger.info("No hay más documentos, finalizando recolección")
+                break
+
+            # Actualizar página e índice para cada documento
+            for idx, doc in enumerate(documentos):
+                doc['pagina'] = pagina + 1
+                doc['indice_en_pagina'] = idx + 1
+
+            nuevos = []
+            for d in documentos:
+                token = d.get('token')
+                key = (token, d.get('pagina'), d.get('indice_en_pagina'))
+                if token and key not in documentos_vistos:
+                    documentos_vistos.add(key)
+                    nuevos.append(d)
+                    obtenidos += 1
+
                     if max_results and obtenidos >= max_results:
                         break
-                    if download_pdfs:
-                        futures.append(executor.submit(self.procesar_documento, doc))
-                    else:
-                        doc['estado_descarga'] = 'omitido'
-                        self._register_result(doc)
-                        resultados_finales.append(doc)
-                        obtenidos += 1
 
-                # Recolectar lo que ya terminó sin bloquear el siguiente page
-                done_now = []
-                for fut in list(futures):
-                    if fut.done():
-                        result = fut.result()
+            todos_documentos.extend(nuevos)
+
+            if not nuevos:
+                self.logger.info("Todos los documentos de esta página ya fueron vistos")
+                break
+
+            self.logger.info(f"Página {pagina + 1}: {len(nuevos)} documentos nuevos recolectados")
+
+            pagina += 1
+            time.sleep(0.3)  # Cortesía entre peticiones
+
+        self.logger.info(f"FASE 1 completada: {len(todos_documentos)} documentos recolectados")
+
+        # FASE 2: Procesar descargas en paralelo
+        if download_pdfs and todos_documentos:
+            self.logger.info(f"FASE 2: Descargando {len(todos_documentos)} documentos con {max_workers} workers...")
+
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = []
+
+                for doc in todos_documentos:
+                    if cancel_event and cancel_event.is_set():
+                        break
+
+                    future = executor.submit(self.procesar_documento, doc)
+                    futures.append(future)
+
+                # Procesar resultados conforme se completan
+                for future in as_completed(futures):
+                    if cancel_event and cancel_event.is_set():
+                        self.logger.info("Cancelado por el usuario durante descargas")
+                        break
+
+                    try:
+                        result = future.result()
                         resultados_finales.append(result)
-                        obtenidos += 1
-                        done_now.append(fut)
-                        if max_results and obtenidos >= max_results:
-                            break
-                for fut in done_now:
-                    futures.remove(fut)
+                    except Exception as e:
+                        self.logger.error(f"Error procesando documento: {e}")
+        else:
+            # Si no se descargan PDFs, marcar como omitidos
+            for doc in todos_documentos:
+                doc['estado_descarga'] = 'omitido'
+                self._register_result(doc)
+                resultados_finales.append(doc)
 
-                if max_results and obtenidos >= max_results:
-                    self.logger.info("Se alcanzó el límite solicitado.")
-                    break
-
-                pagina += 1
-                time.sleep(0.3)  # cortesía
-
-            # Esperar los pendientes
-            for fut in as_completed(futures):
-                if max_results and obtenidos >= max_results:
-                    break
-                result = fut.result()
-                resultados_finales.append(result)
-                obtenidos += 1
-
+        # Generar reporte final
         elapsed = (datetime.now() - start_time).total_seconds()
-        self.logger.info(f"Total procesados: {len(resultados_finales)} en {elapsed:.1f}s")
+        self.logger.info(f"Proceso completado en {elapsed:.1f} segundos")
+
+        reporte = self.generar_reporte_final()
+
+        if reporte:
+            self.logger.info("=" * 60)
+            self.logger.info("RESUMEN FINAL:")
+            self.logger.info(f"Total esperados: {reporte['resumen']['total_esperados']}")
+            self.logger.info(f"Total procesados: {reporte['resumen']['total_documentos']}")
+            self.logger.info(f"Descargados: {reporte['resumen']['pdfs_descargados']}")
+            self.logger.info(f"Errores: {reporte['resumen']['errores_descarga']}")
+            self.logger.info(f"Tamaño total: {reporte['resumen']['tamaño_total_mb']} MB")
+            self.logger.info(f"Duración: {reporte['duracion_formateada']}")
+            self.logger.info("=" * 60)
+
         return resultados_finales

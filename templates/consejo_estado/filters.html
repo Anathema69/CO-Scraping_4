@@ -13,50 +13,221 @@
 {% block extra_css %}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
 <style>
-  /* Reutiliza estilos tipo Tesauro */
-  .preview-panel {
+  /* Estilos para el panel de estado del proceso */
+  .status-card {
     background: var(--bg-card);
     border-radius: var(--border-radius-lg);
     padding: var(--spacing-xl);
     margin-top: var(--spacing-lg);
     border: 1px solid var(--border);
     box-shadow: var(--shadow-lg);
-    display: none;
   }
 
-  .preview-item {
-    background: var(--bg-input);
-    border-radius: var(--border-radius);
-    padding: var(--spacing-md);
-    margin-bottom: var(--spacing-md);
-    transition: var(--transition);
-  }
-
-  .preview-item:hover {
-    transform: translateX(4px);
-    background: var(--bg-secondary);
-  }
-
-  .preview-title {
-    font-weight: 600;
-    color: var(--text-primary);
-    margin-bottom: var(--spacing-sm);
-  }
-
-  .preview-meta {
+  .status-header {
     display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-lg);
+  }
+
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+
+  .status-badge.iniciado {
+    background: rgba(255, 193, 7, 0.2);
+    color: #ffc107;
+  }
+
+  .status-badge.completado {
+    background: rgba(40, 167, 69, 0.2);
+    color: #28a745;
+  }
+
+  .status-date {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    margin-left: auto;
+  }
+
+  /* Total esperados */
+  .expected-total {
+    margin: var(--spacing-lg) 0;
+  }
+
+  .expected-total p {
+    margin: 0;
+    font-size: 1rem;
+    color: var(--text-muted);
+  }
+
+  .expected-total .number {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--primary);
+    margin-top: 0.25rem;
+  }
+
+  /* Panel de resumen completado */
+  .completion-summary {
+    background: var(--bg-card);
+    border-radius: var(--border-radius-lg);
+    padding: var(--spacing-xl);
+    margin-top: var(--spacing-lg);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .summary-header {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-xl);
+  }
+
+  .summary-header i {
+    font-size: 2rem;
+    color: #28a745;
+  }
+
+  .summary-header h4 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+  }
+
+  /* Estadísticas principales */
+  .main-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: var(--spacing-lg);
-    flex-wrap: wrap;
+    margin-bottom: var(--spacing-xl);
+  }
+
+  .stat-item {
+    text-align: left;
+  }
+
+  .stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+  }
+
+  .stat-value.success {
+    color: #28a745;
+  }
+
+  .stat-value.error {
+    color: #dc3545;
+  }
+
+  .stat-label {
     font-size: 0.875rem;
     color: var(--text-muted);
   }
 
-  .preview-meta span {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-xs);
+  /* Detalles adicionales */
+  .summary-details {
+    display: grid;
+    gap: var(--spacing-sm);
+    padding-top: var(--spacing-lg);
+    border-top: 1px solid var(--border);
   }
 
+  .summary-details p {
+    margin: 0;
+    display: flex;
+    justify-content: space-between;
+    color: var(--text-secondary);
+  }
+
+  .summary-details strong {
+    color: var(--text-primary);
+  }
+
+  /* Panel de reporte final */
+  .final-report-section {
+    margin-top: var(--spacing-xl);
+  }
+
+  .report-header {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-lg);
+    font-size: 1.125rem;
+    font-weight: 600;
+  }
+
+  .report-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--spacing-lg);
+    margin-bottom: var(--spacing-lg);
+  }
+
+  .report-stat {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  .report-stat label {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+  }
+
+  .report-stat .value {
+    font-size: 1.5rem;
+    font-weight: 600;
+  }
+
+  .report-stat .value.success {
+    color: #28a745;
+  }
+
+  .report-stat .value.error {
+    color: #dc3545;
+  }
+
+  .success-rate {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #28a745;
+  }
+
+  /* Botones de acción */
+  .action-buttons {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1.5rem;
+    flex-wrap: wrap;
+  }
+
+  .action-buttons .btn {
+    flex: 1;
+    min-width: 150px;
+  }
+
+  /* Animaciones */
+  .progress-bar {
+    background: linear-gradient(90deg, var(--primary) 0%, var(--secondary) 100%);
+    animation: progress 1.5s ease-in-out;
+  }
+
+  @keyframes progress {
+    from { width: 0; }
+  }
+
+  /* Floating controls */
   .floating-controls {
     position: fixed;
     top: 100px;
@@ -84,46 +255,46 @@
     transform: scale(1.1);
   }
 
-  .floating-controls .btn::before {
-    content: attr(data-tooltip);
-    position: absolute;
-    right: 60px;
-    top: 50%;
-    transform: translateY(-50%);
+  /* Notificaciones toast */
+  .notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
     background: var(--bg-card);
     color: var(--text-primary);
-    padding: 0.5rem 0.75rem;
-    border-radius: 6px;
-    font-size: 0.875rem;
-    white-space: nowrap;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.3s ease;
-    border: 1px solid var(--border);
-    box-shadow: var(--shadow);
-  }
-
-  .floating-controls .btn:hover::before {
-    opacity: 1;
-  }
-
-  .action-buttons {
+    padding: 1rem 1.5rem;
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-lg);
     display: flex;
-    gap: 1rem;
-    margin-top: 1.5rem;
-    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    transform: translateX(400px);
+    transition: transform 0.3s ease;
+    z-index: 1000;
+    min-width: 300px;
   }
 
-  .action-buttons .btn {
-    flex: 1;
-    min-width: 150px;
+  .notification.show {
+    transform: translateX(0);
   }
 
-  .btn-loading {
-    opacity: 0.7;
-    pointer-events: none;
+  .notification-success {
+    border-left: 4px solid #28a745;
   }
 
+  .notification-warning {
+    border-left: 4px solid #ffc107;
+  }
+
+  .notification-danger {
+    border-left: 4px solid #dc3545;
+  }
+
+  .notification-info {
+    border-left: 4px solid #17a2b8;
+  }
+
+  /* Responsive */
   @media (max-width: 768px) {
     .floating-controls {
       position: relative;
@@ -133,9 +304,15 @@
       justify-content: center;
       margin: 1rem 0;
     }
+
+    .main-stats {
+      grid-template-columns: 1fr 1fr;
+    }
+
     .action-buttons {
       flex-direction: column;
     }
+
     .action-buttons .btn {
       width: 100%;
     }
@@ -170,7 +347,7 @@
         <i class="fas fa-filter"></i>
         <h3>Filtros de Búsqueda</h3>
       </div>
-       <div class="form-grid two-col" style="gap: 1rem; margin-top: var(--spacing-lg);">
+      <div class="form-grid two-col" style="gap: 1rem; margin-top: var(--spacing-lg);">
         <div class="field">
           <label class="field-label" for="sala-decision">
             <i class="fas fa-university"></i>
@@ -204,30 +381,15 @@
       <!-- Hidden defaults -->
       <input type="hidden" name="max_workers" id="max-workers" value="3">
       <input type="hidden" name="download_pdfs" value="true">
-
-
     </div>
 
     <!-- Botones de acción -->
-        <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+    <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
       <button type="button" id="btn-search" class="btn btn-primary btn-full">
         <i class="fas fa-search"></i> Iniciar Búsqueda
       </button>
-      <button type="button" id="btn-download-manifest" class="btn btn-secondary" style="display: none;">
-        <i class="fas fa-download"></i> Descargar Manifiesto (JSON)
-      </button>
     </div>
-
   </form>
-
-  <!-- Panel de vista previa -->
-  <div id="preview-panel" class="preview-panel">
-    <div class="card-header">
-      <i class="fas fa-eye"></i>
-      <h3>Vista Previa de Resultados</h3>
-    </div>
-    <div id="preview-content"></div>
-  </div>
 
   <!-- Panel de resultados -->
   <div id="results-panel" class="results-panel" style="display: none;">
@@ -240,8 +402,11 @@
       <button type="button" id="btn-check-status" class="btn btn-secondary">
         <i class="fas fa-sync-alt"></i> Actualizar Estado
       </button>
-      <button type="button" id="btn-download-manifest" class="btn btn-primary" style="display: none;">
-        <i class="fas fa-download"></i> Descargar Manifiesto (JSON)
+      <button type="button" id="btn-download-csv" class="btn btn-primary" style="display: none;">
+        <i class="fas fa-file-csv"></i> Descargar CSV
+      </button>
+      <button type="button" id="btn-download-manifest" class="btn btn-secondary" style="display: none;">
+        <i class="fas fa-download"></i> Descargar Manifiesto
       </button>
     </div>
   </div>
@@ -260,11 +425,4 @@
 <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/es.js"></script>
 <script src="{{ url_for('static', filename='js/consejo_estado.js') }}"></script>
-<script>
-  // Inicializa flatpickr
-  flatpickr("#fecha-desde", { locale: "es", dateFormat: "d/m/Y" });
-  flatpickr("#fecha-hasta", { locale: "es", dateFormat: "d/m/Y" });
-
-  // Puedes agregar funciones similares a tesauro.js para manejo de preview/search
-</script>
 {% endblock %}

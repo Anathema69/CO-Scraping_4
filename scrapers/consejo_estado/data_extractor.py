@@ -26,6 +26,19 @@ class SAMAIDataExtractor:
         """
         soup = BeautifulSoup(html, 'html.parser')
 
+        # Buscar el span que contiene el total de documentos
+        total_label = soup.find('span', {'id': lambda x: x and 'LblCantidadTotal' in x})
+        if total_label:
+            try:
+                total_text = total_label.text.strip()
+                total_match = re.search(r'\d+', total_text)
+                if total_match:
+                    total = int(total_match.group())
+                    self.logger.info(f"Total de documentos encontrados: {total}")
+                    return total, 10
+            except:
+                pass
+
         # En SAMAI, la información de paginación viene en el texto general
         # Primero intentamos contar los resultados reales en la página
         tabla = soup.find('table', {'class': 'table'})
@@ -92,51 +105,7 @@ class SAMAIDataExtractor:
         documentos = []
         documentos_procesados = set()  # Para evitar duplicados
 
-        # Buscar la tabla de resultados
-        tabla = soup.find('table', {'class': 'table'})
-        if not tabla:
-            self.logger.warning("No se encontró tabla de resultados")
-            return documentos
-
-        # Buscar todas las filas (excepto el header)
-        filas = tabla.find_all('tr')[1:]  # Saltar el header
-
-        self.logger.debug(f"Encontradas {len(filas)} filas en la tabla")
-
-        for idx, fila in enumerate(filas):
-            try:
-                # Buscar el botón "Ver documento" con el token
-                ver_doc_link = fila.find('a', onclick=re.compile(r'CargarVentana'))
-
-                if not ver_doc_link:
-                    self.logger.debug(f"Fila {idx + 1}: No se encontró botón 'Ver documento'")
-                    continue
-
-                onclick = ver_doc_link.get('onclick', '')
-
-                # Extraer token del onclick
-                token_match = re.search(r'tokenDocumento=([^\']+)', onclick)
-                if not token_match:
-                    self.logger.debug(f"Fila {idx + 1}: No se pudo extraer token")
-                    continue
-            except:
-                self.logger.debug(f"Fila {idx + 1}: No se pudo extraer token")
-
-    def extraer_documentos_con_tokens(self, html: str) -> List[Dict]:
-        """
-        Extraer documentos y sus tokens JWT de la página de resultados
-
-        Args:
-            html: HTML de la página
-
-        Returns:
-            Lista de diccionarios con información de cada documento
-        """
-        soup = BeautifulSoup(html, 'html.parser')
-        documentos = []
-        documentos_procesados = set()  # Para evitar duplicados
-
-        # Método 1: Buscar todos los botones "Ver documento"
+        # Buscar todos los botones "Ver documento"
         ver_doc_links = soup.find_all('a', onclick=re.compile(r'CargarVentana'))
 
         self.logger.debug(f"Encontrados {len(ver_doc_links)} enlaces 'Ver documento'")
@@ -160,13 +129,21 @@ class SAMAIDataExtractor:
 
                 documentos_procesados.add(token)
 
-                # Buscar el contenedor padre (puede ser div.row o tr)
-                parent_container = link.find_parent('div', class_='row')
-                if not parent_container:
-                    parent_container = link.find_parent('tr')
+                # Buscar el contenedor principal más externo (div.row)
+                parent_container = None
+
+                # Subir en el DOM hasta encontrar el div.row principal
+                current = link
+                for _ in range(10):  # Buscar hasta 10 niveles arriba
+                    current = current.parent
+                    if current and current.name == 'div' and 'row' in current.get('class', []):
+                        # Verificar que este div.row contenga los campos que necesitamos
+                        if current.find('a', id=re.compile(r'.*HypRadicado.*')):
+                            parent_container = current
+                            break
 
                 if not parent_container:
-                    self.logger.debug(f"Link {idx + 1}: No se encontró contenedor padre")
+                    self.logger.debug(f"Link {idx + 1}: No se encontró contenedor padre adecuado")
                     # Aún así crear entrada con el token
                     doc_info = {'token': token}
                     documentos.append(doc_info)
@@ -187,33 +164,58 @@ class SAMAIDataExtractor:
                     'demandado': ''
                 }
 
-                # Extraer todos los spans con información
-                spans = parent_container.find_all('span')
+                # Extraer número de proceso (radicado) - el enlace con HypRadicado
+                radicado_link = parent_container.find('a', id=re.compile(r'.*HypRadicado.*'))
+                if radicado_link:
+                    doc_info['numero_proceso'] = radicado_link.text.strip()
+                    self.logger.debug(f"Número de proceso encontrado: {doc_info['numero_proceso']}")
 
-                for span in spans:
-                    span_id = span.get('id', '')
-                    span_text = span.text.strip()
+                # Extraer otros campos usando IDs parciales
+                # Interno
+                interno_span = parent_container.find('span', id=re.compile(r'.*LblInterno.*'))
+                if interno_span:
+                    doc_info['interno'] = interno_span.text.strip()
 
-                    if 'LblRadicado' in span_id:
-                        doc_info['numero_proceso'] = span_text
-                    elif 'LblInterno' in span_id:
-                        doc_info['interno'] = span_text
-                    elif 'LblFECHAPROC' in span_id:
-                        doc_info['fecha_proceso'] = span_text
-                    elif 'LblClaseProceso' in span_id:
-                        doc_info['clase_proceso'] = span_text
-                    elif 'LblPonente' in span_id:
-                        doc_info['titular'] = span_text
-                    elif 'LblActor' in span_id:
-                        doc_info['actor'] = span_text
-                    elif 'LbNombreSalaDecision' in span_id or 'LblNombreSalaDecision' in span_id:
-                        doc_info['sala_decision'] = span_text
-                    elif 'LblDemandado' in span_id:
-                        doc_info['demandado'] = span_text
-                    elif 'LblFechaProvidencia' in span_id:
-                        doc_info['fecha_providencia'] = span_text
-                    elif 'LblTipoProvidencia' in span_id:
-                        doc_info['tipo_providencia'] = span_text
+                # Fecha proceso
+                fecha_proc_span = parent_container.find('span', id=re.compile(r'.*LblFECHAPROC.*'))
+                if fecha_proc_span:
+                    doc_info['fecha_proceso'] = fecha_proc_span.text.strip()
+
+                # Clase de proceso
+                clase_span = parent_container.find('span', id=re.compile(r'.*LblClaseProceso.*'))
+                if clase_span:
+                    doc_info['clase_proceso'] = clase_span.text.strip()
+
+                # Titular/Ponente
+                ponente_span = parent_container.find('span', id=re.compile(r'.*LblPonente.*'))
+                if ponente_span:
+                    doc_info['titular'] = ponente_span.text.strip()
+
+                # Sala de decisión
+                sala_span = parent_container.find('span',
+                                                  id=re.compile(r'.*LbNombreSalaDecision.*|.*LblNombreSalaDecision.*'))
+                if sala_span:
+                    doc_info['sala_decision'] = sala_span.text.strip()
+
+                # Actor
+                actor_span = parent_container.find('span', id=re.compile(r'.*LblActor.*'))
+                if actor_span:
+                    doc_info['actor'] = actor_span.text.strip()
+
+                # Demandado
+                demandado_span = parent_container.find('span', id=re.compile(r'.*LblDemandado.*'))
+                if demandado_span:
+                    doc_info['demandado'] = demandado_span.text.strip()
+
+                # Fecha de providencia
+                fecha_prov_span = parent_container.find('span', id=re.compile(r'.*Label1.*'))
+                if fecha_prov_span:
+                    doc_info['fecha_providencia'] = fecha_prov_span.text.strip()
+
+                # Tipo de providencia
+                tipo_prov_span = parent_container.find('span', id=re.compile(r'.*LblTIPOPROVIDENCIA.*'))
+                if tipo_prov_span:
+                    doc_info['tipo_providencia'] = tipo_prov_span.text.strip()
 
                 # Agregar el documento
                 documentos.append(doc_info)
@@ -223,32 +225,6 @@ class SAMAIDataExtractor:
             except Exception as e:
                 self.logger.error(f"Error procesando link {idx + 1}: {e}")
                 continue
-
-        # Si no encontramos documentos con el método anterior, intentar método alternativo
-        if not documentos:
-            self.logger.debug("No se encontraron documentos con el método principal, intentando método alternativo")
-
-            # Buscar tabla de resultados
-            tabla = soup.find('table', {'class': 'table'})
-            if tabla:
-                filas = tabla.find_all('tr')[1:]  # Saltar header
-
-                for idx, fila in enumerate(filas):
-                    # Buscar link en la fila
-                    link = fila.find('a', onclick=re.compile(r'CargarVentana'))
-                    if link:
-                        onclick = link.get('onclick', '')
-                        token_match = re.search(r'tokenDocumento=([^\'\"]+)', onclick)
-                        if token_match:
-                            token = token_match.group(1)
-                            if token not in documentos_procesados:
-                                doc_info = {'token': token}
-                                # Intentar extraer más información de la fila
-                                celdas = fila.find_all('td')
-                                if len(celdas) > 1:
-                                    doc_info['numero_proceso'] = celdas[0].text.strip() if celdas[0] else ''
-                                documentos.append(doc_info)
-                                documentos_procesados.add(token)
 
         self.logger.info(f"Total documentos extraídos: {len(documentos)}")
 

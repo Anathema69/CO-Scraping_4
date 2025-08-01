@@ -13,6 +13,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-search").addEventListener("click", handleSearch);
   document.getElementById("btn-check-status").addEventListener("click", checkStatus);
   document.getElementById("btn-download-manifest").addEventListener("click", downloadManifest);
+  document.getElementById("btn-download-csv").addEventListener("click", downloadCSV);
   document.getElementById("btn-cancel-search").addEventListener("click", cancelSearch);
   document.getElementById("btn-new-search").addEventListener("click", newSearch);
 
@@ -45,20 +46,20 @@ document.addEventListener("DOMContentLoaded", () => {
     const hasta = document.getElementById("fecha-hasta").value.trim();
 
     if (!sala || !desde || !hasta) {
-      alert("Completa sala de decisión y rango de fechas.");
+      showNotification("Por favor completa todos los campos requeridos", "warning");
       return;
     }
 
     setSearchingState(true);
-    showLoader("Iniciando scraping del Consejo de Estado...");
+    showLoader("Iniciando búsqueda en el Consejo de Estado...");
     document.getElementById("results-panel").style.display = "block";
 
     const formData = new FormData();
     formData.append("sala_decision", sala);
     formData.append("fecha_desde", desde);
     formData.append("fecha_hasta", hasta);
-    // campos ocultos que están en el HTML
     formData.append("max_workers", document.getElementById("max-workers").value || "3");
+    formData.append("download_pdfs", "true");
 
     try {
       const resp = await fetch("/consejo_estado/start_scraping", {
@@ -73,18 +74,24 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       currentTimestamp = result.timestamp;
-      updateStatusPanel({ manifest: result }); // inicializar con lo que venga
 
-      // Polling de estado cada 5s
+      // Mostrar estado inicial
+      updateStatusPanel({
+        estado: 'iniciado',
+        parametros: result.parametros,
+        timestamp: result.timestamp
+      });
+
+      // Polling de estado cada 3 segundos
       if (statusInterval) clearInterval(statusInterval);
       statusInterval = setInterval(() => {
         if (currentTimestamp && isSearching) checkStatus();
-      }, 5000);
+      }, 3000);
 
     } catch (err) {
       console.error("Error iniciando scraping:", err);
-      const statusContent = document.getElementById("status-content");
-      statusContent.innerHTML = `<div class="alert alert-danger">Error: ${err.message}</div>`;
+      showNotification(`Error: ${err.message}`, "danger");
+      setSearchingState(false);
     } finally {
       hideLoader();
     }
@@ -96,16 +103,18 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const resp = await fetch(`/consejo_estado/status/${currentTimestamp}`);
       const data = await resp.json();
+
       if (!resp.ok) {
         throw new Error(data.message || `HTTP ${resp.status}`);
       }
 
       updateStatusPanel(data);
 
-      // Si ya hay reporte final, detener polling
+      // Si hay reporte final, detener polling
       if (data.final_report) {
         setSearchingState(false);
         clearInterval(statusInterval);
+        showNotification("Búsqueda completada", "success");
       }
     } catch (err) {
       console.error("Error consultando estado:", err);
@@ -114,60 +123,146 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function updateStatusPanel(data) {
     const statusContent = document.getElementById("status-content");
-    statusContent.innerHTML = "";
-
-    // Mostrar manifest parcial o completo
-    const manifest = data.manifest || data; // en el start_scraping la respuesta viene con timestamp etc.
-    const finalReport = data.final_report;
-
     let html = "";
 
-    if (finalReport) {
-      html += `
-        <div style="margin-bottom:1rem;">
-          <h4>Scraping completado</h4>
-          <div><strong>Total documentos:</strong> ${finalReport.resumen?.total_documentos || "-"}</div>
-          <div><strong>ZIPs descargados:</strong> ${finalReport.resumen?.pdfs_descargados || "-"}</div>
-          <div><strong>Errores:</strong> ${finalReport.resumen?.errores_descarga || "-"}</div>
-          <div><strong>Duración:</strong> ${finalReport.duracion_segundos?.toFixed(2) || "-"}s</div>
+    // Si hay reporte final, mostrar resumen estilo jurisprudencia/tesauro
+    if (data.final_report) {
+      const report = data.final_report;
+      const resumen = report.resumen || {};
+
+      html = `
+        <!-- Estado del Proceso -->
+        <div class="status-card">
+          <div class="status-header">
+            <span class="status-badge completado">
+              <i class="fas fa-check-circle"></i>
+              completado
+            </span>
+            <span class="status-date">${new Date(report.fecha_fin).toLocaleString('es-ES')}</span>
+          </div>
+          
+          <div class="expected-total">
+            <p>Total esperados:</p>
+            <div class="number">${resumen.total_esperados || 0}</div>
+          </div>
+        </div>
+
+        <!-- Panel de Búsqueda Completada -->
+        <div class="completion-summary">
+          <div class="summary-header">
+            <i class="fas fa-check-circle"></i>
+            <h4>Búsqueda Completada</h4>
+          </div>
+          
+          <div class="main-stats">
+            <div class="stat-item">
+              <div class="stat-value">${resumen.total_esperados || 0}</div>
+              <div class="stat-label">Documentos Esperados</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-value">${resumen.total_documentos || 0}</div>
+              <div class="stat-label">Documentos Procesados</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-value success">${resumen.pdfs_descargados || 0}</div>
+              <div class="stat-label">ZIPs Descargados</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-value error">${resumen.errores_descarga || 0}</div>
+              <div class="stat-label">Errores</div>
+            </div>
+          </div>
+          
+          <div class="summary-details">
+            <p><strong>Duración:</strong> <span>${report.duracion_formateada || '-'}</span></p>
+            <p><strong>Tamaño total:</strong> <span>${resumen.tamaño_total_mb || 0} MB</span></p>
+            <p><strong>Fecha:</strong> <span>${new Date(report.fecha_inicio).toLocaleString('es-ES')}</span></p>
+          </div>
+        </div>
+
+        <!-- Reporte Final -->
+        <div class="final-report-section">
+          <div class="report-header">
+            <i class="fas fa-chart-bar"></i>
+            Reporte Final
+          </div>
+          
+          <div class="report-stats">
+            <div class="report-stat">
+              <label>Recolectados:</label>
+              <span class="value">${resumen.total_documentos || 0}</span>
+            </div>
+            <div class="report-stat">
+              <label>Descargados:</label>
+              <span class="value success">${resumen.pdfs_descargados || 0}</span>
+            </div>
+            <div class="report-stat">
+              <label>Errores:</label>
+              <span class="value error">${resumen.errores_descarga || 0}</span>
+            </div>
+            <div class="report-stat">
+              <label>Tasa de éxito:</label>
+              <span class="value success">${calcularTasaExito(resumen)}%</span>
+            </div>
+          </div>
         </div>
       `;
-    }
 
-    if (manifest && Array.isArray(manifest)) {
-      // Si el manifest es la lista de resultados (caso directo)
-      html += `<table class="table"><thead>
-        <tr>
-          <th>Radicado</th><th>Sala</th><th>Fecha providencia</th><th>Estado</th><th>Worker</th><th>Error</th>
-        </tr></thead><tbody>`;
-      manifest.forEach(item => {
-        html += `
-          <tr>
-            <td>${item.numero_proceso || item.interno || "-"}</td>
-            <td>${item.sala_decision || "-"}</td>
-            <td>${item.fecha_providencia || item.fecha_proceso || "-"}</td>
-            <td>${item.estado_descarga || "null"}</td>
-            <td>${item.worker || "-"}</td>
-            <td>${item.error || ""}</td>
-          </tr>
-        `;
-      });
-      html += `</tbody></table>`;
-    } else if (manifest && manifest.timestamp) {
+      // Mostrar botones de descarga
+      document.getElementById("btn-download-csv").style.display = "inline-flex";
+      document.getElementById("btn-download-manifest").style.display = "inline-flex";
+
+    } else if (data.manifest) {
+      // Estado en proceso
+      const manifest = data.manifest;
+      const procesados = manifest.total_procesados || 0;
+      const esperados = manifest.total_esperados || 0;
+
+      html = `
+        <!-- Estado del Proceso -->
+        <div class="status-card">
+          <div class="status-header">
+            <span class="status-badge iniciado">
+              <i class="fas fa-clock"></i>
+              iniciado
+            </span>
+            <span class="status-date">${new Date().toLocaleString('es-ES')}</span>
+          </div>
+          
+          <div class="expected-total">
+            <p>Total esperados:</p>
+            <div class="number">${esperados}</div>
+          </div>
+        </div>
+      `;
+    } else if (data.estado === 'iniciado') {
       // Estado inicial
-      html += `
-        <div>
-          <div><strong>Timestamp:</strong> ${manifest.timestamp}</div>
-          <div><strong>Filtros:</strong> ${JSON.stringify(manifest.parametros?.filtros || manifest.parametros || {})}</div>
-          <div><strong>Workers:</strong> ${manifest.parametros?.max_workers || "-"}</div>
+      html = `
+        <!-- Estado del Proceso -->
+        <div class="status-card">
+          <div class="status-header">
+            <span class="status-badge iniciado">
+              <i class="fas fa-clock"></i>
+              iniciado
+            </span>
+            <span class="status-date">${new Date().toLocaleString('es-ES')}</span>
+          </div>
+          
+          <div class="expected-total">
+            <p>Obteniendo total de documentos...</p>
+          </div>
         </div>
       `;
     }
 
     statusContent.innerHTML = html;
+  }
 
-    // Mostrar botón de descargar manifiesto
-    document.getElementById("btn-download-manifest").style.display = "inline-flex";
+  function calcularTasaExito(resumen) {
+    const total = resumen.total_documentos || 0;
+    const exitosos = resumen.pdfs_descargados || 0;
+    if (total === 0) return "0.00";
+    return ((exitosos / total) * 100).toFixed(2);
   }
 
   function showLoader(text = "Procesando...") {
@@ -180,16 +275,19 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function cancelSearch() {
-    // Lógica de cancelación similar a los otros scrapers si implementaste endpoint
     if (!currentTimestamp) return;
-    fetch(`/consejo_estado/cancel_scraping/${currentTimestamp}`, { method: "POST" })
-      .then(res => res.json())
-      .then(resp => {
-        showNotification("Cancelado: " + (resp.message || ""), "warning");
-        setSearchingState(false);
-        clearInterval(statusInterval);
-      })
-      .catch(err => console.error("Error cancelando:", err));
+
+    if (confirm("¿Estás seguro de que deseas cancelar la búsqueda en curso?")) {
+      fetch(`/consejo_estado/cancel_scraping/${currentTimestamp}`, { method: "POST" })
+        .then(res => res.json())
+        .then(resp => {
+          showNotification("Búsqueda cancelada", "warning");
+          setSearchingState(false);
+          clearInterval(statusInterval);
+          checkStatus(); // Actualizar estado final
+        })
+        .catch(err => console.error("Error cancelando:", err));
+    }
   }
 
   function newSearch() {
@@ -198,7 +296,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function downloadManifest() {
     if (!currentTimestamp) return;
-    // Se puede descargar desde el manifiesto en el servidor o reconstruir
     const url = `/logs/consejo_estado/${currentTimestamp}/manifest.json`;
     const a = document.createElement("a");
     a.href = url;
@@ -206,8 +303,29 @@ document.addEventListener("DOMContentLoaded", () => {
     a.click();
   }
 
+  function downloadCSV() {
+    if (!currentTimestamp) return;
+    window.location.href = `/consejo_estado/download_csv/${currentTimestamp}`;
+  }
+
   function showNotification(msg, type = "info") {
-    // simple toast
-    alert(msg);
+    // Crear notificación tipo toast
+    const notification = document.createElement("div");
+    notification.className = `notification notification-${type}`;
+    notification.innerHTML = `
+      <i class="fas fa-${type === 'success' ? 'check' : type === 'warning' ? 'exclamation' : type === 'danger' ? 'times' : 'info'}-circle"></i>
+      <span>${msg}</span>
+    `;
+
+    document.body.appendChild(notification);
+
+    // Animar entrada
+    setTimeout(() => notification.classList.add("show"), 10);
+
+    // Remover después de 3 segundos
+    setTimeout(() => {
+      notification.classList.remove("show");
+      setTimeout(() => notification.remove(), 300);
+    }, 3000);
   }
 });
