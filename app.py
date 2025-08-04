@@ -12,6 +12,21 @@ from scrapers.jurisprudencia.scraper import JudicialScraperV2
 from scrapers.tesauro.scraper import TesauroScraper
 from utils.form_helpers import build_search_params
 
+#Para la biblioteca nacional
+
+
+from scrapers.biblioteca_ccb import BibliotecaCCBScraper
+
+import os
+
+# Variable global para el estado del scraper
+biblioteca_ccb_status = {
+    'in_progress': False,
+    'scraper': None,
+    'thread': None,
+    'result': None
+}
+
 app = Flask(__name__)
 
 # Configurar logging para la app
@@ -835,6 +850,227 @@ def active_processes():
         'status': 'success',
         'processes': processes
     })
+
+
+@app.route('/biblioteca_ccb')
+def biblioteca_ccb():
+    """Página principal de Biblioteca CCB"""
+    return render_template('biblioteca_ccb/filters.html')
+
+
+@app.route('/api/biblioteca_ccb/search', methods=['POST'])
+def biblioteca_ccb_search():
+    """Inicia una búsqueda en la Biblioteca CCB"""
+    global biblioteca_ccb_status
+
+    try:
+        # Log para debugging
+        app.logger.info("Biblioteca CCB: Iniciando búsqueda")
+
+        # Verificar si ya hay una búsqueda en progreso
+        if biblioteca_ccb_status['in_progress']:
+            return jsonify({
+                'error': 'Ya hay una búsqueda en progreso',
+                'status': 'busy'
+            }), 400
+
+        # Obtener datos del request
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'error': 'No se recibieron datos',
+                'status': 'error'
+            }), 400
+
+        app.logger.info(f"Biblioteca CCB: Datos recibidos: {data}")
+
+        # Validar tipo de búsqueda
+        if data.get('filtro') != 'fecha':
+            return jsonify({
+                'error': 'Solo la búsqueda por fecha está implementada actualmente',
+                'status': 'not_implemented'
+            }), 501
+
+        # Obtener filtro de fecha
+        date_filter = data.get('date_filter', None)
+        limit = data.get('limit', None)
+
+        app.logger.info(f"Biblioteca CCB: Filtro de fecha: {date_filter}, Límite: {limit}")
+
+        # Crear directorio de salida
+        output_dir = os.path.join('downloads', 'biblioteca_ccb', 'laudos_arbitraje')
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Inicializar scraper
+        scraper = BibliotecaCCBScraper(output_dir=output_dir)
+        biblioteca_ccb_status['scraper'] = scraper
+        biblioteca_ccb_status['in_progress'] = True
+        biblioteca_ccb_status['result'] = None
+
+        # Función para ejecutar en thread
+        def run_scraper():
+            try:
+                app.logger.info("Biblioteca CCB: Ejecutando scraper en thread")
+                result = scraper.run(date_filter=date_filter, limit=limit)
+                biblioteca_ccb_status['result'] = result
+                app.logger.info(f"Biblioteca CCB: Scraper completado: {result}")
+            except Exception as e:
+                app.logger.error(f"Biblioteca CCB: Error en scraper: {str(e)}")
+                biblioteca_ccb_status['result'] = {
+                    'status': 'error',
+                    'error': str(e),
+                    'stats': {
+                        'expected': 0,
+                        'processed': 0,
+                        'downloaded': 0,
+                        'failed': 0,
+                        'success_rate': 0
+                    }
+                }
+            finally:
+                biblioteca_ccb_status['in_progress'] = False
+
+        # Iniciar thread
+        thread = threading.Thread(target=run_scraper)
+        thread.daemon = True
+        thread.start()
+        biblioteca_ccb_status['thread'] = thread
+
+        return jsonify({
+            'status': 'started',
+            'message': 'Búsqueda iniciada',
+            'date_filter': date_filter
+        })
+
+    except Exception as e:
+        app.logger.error(f"Biblioteca CCB: Error en endpoint: {str(e)}")
+        biblioteca_ccb_status['in_progress'] = False
+        return jsonify({
+            'error': str(e),
+            'status': 'error'
+        }), 500
+
+
+@app.route('/api/biblioteca_ccb/progress')
+def biblioteca_ccb_progress():
+    """Obtiene el progreso de la búsqueda actual"""
+    global biblioteca_ccb_status
+
+    try:
+        if not biblioteca_ccb_status['in_progress']:
+            return jsonify({
+                'in_progress': False,
+                'status': 'idle'
+            })
+
+        scraper = biblioteca_ccb_status['scraper']
+        if scraper:
+            progress = scraper.get_progress()
+            progress['in_progress'] = True
+            return jsonify(progress)
+
+        return jsonify({
+            'in_progress': True,
+            'status': 'starting',
+            'expected': 0,
+            'processed': 0,
+            'downloaded': 0,
+            'failed': 0
+        })
+
+    except Exception as e:
+        app.logger.error(f"Biblioteca CCB Progress: Error: {str(e)}")
+        return jsonify({
+            'error': str(e),
+            'in_progress': False
+        }), 500
+
+
+@app.route('/api/biblioteca_ccb/status')
+def biblioteca_ccb_status_check():
+    """Verifica el estado de la búsqueda"""
+    global biblioteca_ccb_status
+
+    try:
+        if biblioteca_ccb_status['result']:
+            # Devolver resultado
+            result = biblioteca_ccb_status['result']
+            return jsonify(result)
+
+        if biblioteca_ccb_status['in_progress']:
+            return jsonify({
+                'status': 'in_progress'
+            })
+
+        return jsonify({
+            'status': 'idle'
+        })
+
+    except Exception as e:
+        app.logger.error(f"Biblioteca CCB Status: Error: {str(e)}")
+        return jsonify({
+            'error': str(e),
+            'status': 'error'
+        }), 500
+
+
+@app.route('/api/biblioteca_ccb/stop', methods=['POST'])
+def biblioteca_ccb_stop():
+    """Detiene la búsqueda actual"""
+    global biblioteca_ccb_status
+
+    try:
+        if not biblioteca_ccb_status['in_progress']:
+            return jsonify({
+                'status': 'not_running',
+                'message': 'No hay búsqueda en progreso'
+            })
+
+        # Marcar como no en progreso
+        biblioteca_ccb_status['in_progress'] = False
+
+        return jsonify({
+            'status': 'stopped',
+            'message': 'Búsqueda detenida'
+        })
+
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'status': 'error'
+        }), 500
+
+
+@app.route('/api/biblioteca_ccb/stats')
+def biblioteca_ccb_stats():
+    """Obtiene estadísticas de los laudos descargados"""
+    try:
+        from scrapers.biblioteca_ccb.data_extractor import BibliotecaCCBDataExtractor
+
+        output_dir = os.path.join('downloads', 'biblioteca_ccb', 'laudos_arbitraje')
+
+        if not os.path.exists(output_dir):
+            return jsonify({
+                'stats': {
+                    'total_laudos': 0,
+                    'con_pdf': 0,
+                    'sin_pdf': 0,
+                    'por_año': {},
+                    'por_materia': {},
+                    'arbitros_frecuentes': []
+                }
+            })
+
+        extractor = BibliotecaCCBDataExtractor(data_dir=output_dir)
+        stats = extractor.get_statistics()
+        return jsonify(stats)
+
+    except Exception as e:
+        app.logger.error(f"Biblioteca CCB Stats: Error: {str(e)}")
+        return jsonify({
+            'error': str(e),
+            'stats': {}
+        }), 500
 
 
 

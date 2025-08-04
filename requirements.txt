@@ -9,3 +9,5 @@ pyinstaller
 
 # para beautifulsoup
 beautifulsoup4
+
+pandas

@@ -1,7 +1,23 @@
 // Biblioteca Digital CCB - Funcionalidad
 
 // Variables globales
-let currentTab = 'subcomunidades';
+let currentTab = 'fecha';
+let searchInProgress = false;
+let progressInterval = null;
+
+// Inicializar años disponibles
+function initializeYears() {
+    const yearSelect = document.getElementById('yearFilter');
+    const currentYear = new Date().getFullYear();
+
+    // Agregar años desde 2000 hasta el año actual
+    for (let year = currentYear; year >= 2000; year--) {
+        const option = document.createElement('option');
+        option.value = year.toString();
+        option.textContent = year;
+        yearSelect.appendChild(option);
+    }
+}
 
 // Manejar cambio de tipo de arbitraje
 function handleArbitrageTypeChange() {
@@ -26,12 +42,29 @@ function handleArbitrageTypeChange() {
 
         // Resetear selección después de mostrar el mensaje
         setTimeout(() => {
-            select.value = '';
+            select.value = 'nacional';
             socialNotice.style.display = 'none';
+            handleArbitrageTypeChange();
         }, 3000);
     } else {
         filtersCard.style.display = 'none';
         socialNotice.style.display = 'none';
+    }
+}
+
+// Manejar cambio de año
+function handleYearChange() {
+    const yearSelect = document.getElementById('yearFilter');
+    const monthSelect = document.getElementById('monthFilter');
+    const monthFormText = monthSelect.nextElementSibling;
+
+    if (yearSelect.value) {
+        monthSelect.disabled = false;
+        monthFormText.textContent = 'Seleccione el mes (opcional)';
+    } else {
+        monthSelect.disabled = true;
+        monthSelect.value = '';
+        monthFormText.textContent = 'Primero seleccione un año';
     }
 }
 
@@ -62,32 +95,213 @@ function resetForm() {
     const form = document.getElementById('searchForm');
     form.reset();
 
-    // Resetear selector de tipo de arbitraje
-    document.getElementById('tipoArbitraje').value = '';
-    document.getElementById('filtersCard').style.display = 'none';
+    // Resetear selector de mes
+    const monthSelect = document.getElementById('monthFilter');
+    monthSelect.disabled = true;
+    monthSelect.nextElementSibling.textContent = 'Primero seleccione un año';
 
-    // Volver a la primera pestaña
-    const firstTabButton = document.querySelector('.tab-button');
-    if (firstTabButton) {
-        setActiveTab(firstTabButton, 'subcomunidades');
-    }
+    // Ocultar panel de resultados
+    document.getElementById('resultsPanel').style.display = 'none';
 
     showNotification('Filtros limpiados correctamente', 'info');
 }
 
+// Formatear bytes a tamaño legible
+function formatBytes(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+// Formatear duración
+function formatDuration(seconds) {
+    const minutes = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${minutes}m ${secs}s`;
+}
+
+// Actualizar estadísticas
+function updateStats(data) {
+    // Actualizar contadores
+    let expected = data.expected || 0;
+
+    // Si expected es -1 o 0, mostrar "Calculando..." o el valor procesado
+    if (expected <= 0 && data.processed > 0) {
+        expected = data.processed + '...';
+    } else if (expected <= 0) {
+        expected = 'Calculando...';
+    }
+
+    document.getElementById('expectedCount').textContent = expected;
+    document.getElementById('processedCount').textContent = data.processed || 0;
+    document.getElementById('downloadedCount').textContent = data.downloaded || 0;
+    document.getElementById('failedCount').textContent = data.failed || 0;
+
+    // Si la búsqueda terminó
+    if (data.status === 'completed') {
+        clearInterval(progressInterval);
+        searchInProgress = false;
+
+        // Actualizar expected con el valor final si era "Calculando..."
+        if (typeof expected === 'string') {
+            document.getElementById('expectedCount').textContent = data.stats.expected || data.stats.processed || 0;
+        }
+
+        // Ocultar spinner
+        document.getElementById('searchStatus').style.display = 'none';
+
+        // Mostrar detalles
+        document.getElementById('resultDetails').style.display = 'block';
+        document.getElementById('duration').textContent = formatDuration(data.duration || 0);
+        document.getElementById('totalSize').textContent = formatBytes(data.total_size || 0);
+        document.getElementById('searchDate').textContent = new Date().toLocaleString('es-CO');
+
+        // Mostrar reporte final
+        document.getElementById('finalReport').style.display = 'block';
+        document.getElementById('summaryCollected').textContent = data.stats.expected || data.stats.processed || 0;
+        document.getElementById('summaryDownloaded').textContent = data.stats.downloaded || 0;
+        document.getElementById('summaryErrors').textContent = data.stats.failed || 0;
+
+        const successRate = data.stats.success_rate || 0;
+        document.getElementById('successRate').textContent = successRate.toFixed(2) + '%';
+
+        // Cambiar color según tasa de éxito
+        const successRateElement = document.getElementById('successRate');
+        if (successRate >= 90) {
+            successRateElement.className = 'summary-value success-text';
+        } else if (successRate >= 70) {
+            successRateElement.className = 'summary-value warning-text';
+        } else {
+            successRateElement.className = 'summary-value error-text';
+        }
+
+        // Mostrar notificación
+        if (data.stats.failed > 0) {
+            showNotification(`Búsqueda completada con ${data.stats.failed} errores`, 'warning');
+        } else {
+            showNotification('Búsqueda completada exitosamente', 'success');
+        }
+
+        // Habilitar botón de búsqueda
+        document.getElementById('searchButton').disabled = false;
+    }
+}
+
+// Obtener progreso de búsqueda
+async function getSearchProgress() {
+    try {
+        const response = await fetch('/api/biblioteca_ccb/progress');
+        const data = await response.json();
+
+        if (data.in_progress) {
+            updateStats(data);
+        }
+    } catch (error) {
+        console.error('Error obteniendo progreso:', error);
+    }
+}
+
+// Iniciar búsqueda
+async function startSearch(searchData) {
+    searchInProgress = true;
+
+    // Mostrar panel de resultados
+    const resultsPanel = document.getElementById('resultsPanel');
+    resultsPanel.style.display = 'block';
+    resultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    // Resetear vista
+    document.getElementById('searchStatus').style.display = 'flex';
+    document.getElementById('statsGrid').style.display = 'grid';
+    document.getElementById('resultDetails').style.display = 'none';
+    document.getElementById('finalReport').style.display = 'none';
+
+    // Resetear estadísticas
+    updateStats({
+        expected: 0,
+        processed: 0,
+        downloaded: 0,
+        failed: 0
+    });
+
+    // Deshabilitar botón de búsqueda
+    document.getElementById('searchButton').disabled = true;
+
+    try {
+        const response = await fetch('/api/biblioteca_ccb/search', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(searchData)
+        });
+
+        if (!response.ok) {
+            throw new Error(`Error HTTP: ${response.status}`);
+        }
+
+        const result = await response.json();
+
+        // Iniciar polling de progreso
+        progressInterval = setInterval(getSearchProgress, 2000);
+
+        // Esperar a que termine
+        checkSearchCompletion();
+
+    } catch (error) {
+        console.error('Error iniciando búsqueda:', error);
+        showNotification('Error al iniciar la búsqueda: ' + error.message, 'error');
+        searchInProgress = false;
+        document.getElementById('searchButton').disabled = false;
+        document.getElementById('searchStatus').style.display = 'none';
+    }
+}
+
+// Verificar si la búsqueda terminó
+async function checkSearchCompletion() {
+    try {
+        const response = await fetch('/api/biblioteca_ccb/status');
+        const data = await response.json();
+
+        if (data.status === 'completed') {
+            updateStats(data);
+        } else {
+            // Seguir verificando
+            setTimeout(checkSearchCompletion, 3000);
+        }
+    } catch (error) {
+        console.error('Error verificando estado:', error);
+    }
+}
+
 // Manejar envío del formulario
 document.addEventListener('DOMContentLoaded', function() {
-    const form = document.getElementById('searchForm');
+    console.log('Biblioteca CCB: DOM cargado');
+
+    // Inicializar años
+    initializeYears();
 
     // Auto-seleccionar la opción nacional al cargar
     const tipoArbitraje = document.getElementById('tipoArbitraje');
     if (tipoArbitraje && tipoArbitraje.value === 'nacional') {
+        console.log('Biblioteca CCB: Auto-seleccionando arbitraje nacional');
         handleArbitrageTypeChange();
     }
 
+    const form = document.getElementById('searchForm');
+    console.log('Biblioteca CCB: Formulario encontrado:', form);
+
     if (form) {
-        form.addEventListener('submit', function(e) {
+        form.addEventListener('submit', async function(e) {
             e.preventDefault();
+            console.log('Biblioteca CCB: Submit detectado');
+
+            if (searchInProgress) {
+                showNotification('Ya hay una búsqueda en progreso', 'warning');
+                return;
+            }
 
             // Recopilar datos según la pestaña activa
             let searchData = {
@@ -95,75 +309,102 @@ document.addEventListener('DOMContentLoaded', function() {
                 filtro: currentTab
             };
 
+            console.log('Biblioteca CCB: Tab actual:', currentTab);
+
             switch(currentTab) {
                 case 'fecha':
-                    searchData.fechaDesde = document.getElementById('fechaDesde').value;
-                    searchData.fechaHasta = document.getElementById('fechaHasta').value;
+                    const year = document.getElementById('yearFilter').value;
+                    const month = document.getElementById('monthFilter').value;
 
-                    if (!searchData.fechaDesde || !searchData.fechaHasta) {
-                        showNotification('Por favor seleccione ambas fechas', 'warning');
-                        return;
+                    console.log('Biblioteca CCB: Año:', year, 'Mes:', month);
+
+                    // Construir filtro de fecha
+                    if (year && month) {
+                        searchData.date_filter = `${year}-${month}`;
+                    } else if (year) {
+                        searchData.date_filter = year;
                     }
+                    // Si no hay filtros, se descargará todo
+
                     break;
 
                 case 'autor':
                     searchData.autor = document.getElementById('autor').value.trim();
-
                     if (!searchData.autor) {
                         showNotification('Por favor ingrese el nombre del autor', 'warning');
                         return;
                     }
-                    break;
+                    showNotification('Búsqueda por autor aún no implementada', 'info');
+                    return;
 
                 case 'titulo':
                     searchData.titulo = document.getElementById('titulo').value.trim();
-
                     if (!searchData.titulo) {
                         showNotification('Por favor ingrese palabras clave del título', 'warning');
                         return;
                     }
-                    break;
+                    showNotification('Búsqueda por título aún no implementada', 'info');
+                    return;
 
                 case 'materia':
                     searchData.materia = document.getElementById('materia').value.trim();
-
                     if (!searchData.materia) {
                         showNotification('Por favor ingrese la materia o tema', 'warning');
                         return;
                     }
-                    break;
+                    showNotification('Búsqueda por materia aún no implementada', 'info');
+                    return;
             }
 
-            // Mostrar datos de búsqueda (temporal)
-            console.log('Datos de búsqueda:', searchData);
-            showNotification('Búsqueda iniciada. Esta funcionalidad está en desarrollo.', 'info');
+            // Confirmar si no hay filtros
+            if (currentTab === 'fecha' && !searchData.date_filter) {
+                const confirmDownload = confirm(
+                    '¿Está seguro de que desea descargar TODOS los documentos disponibles?\n\n' +
+                    'Esto puede tomar mucho tiempo y espacio en disco.'
+                );
 
-            // Aquí se enviará la petición al backend cuando esté implementado
-            // fetch('/api/biblioteca_ccb/search', {
-            //     method: 'POST',
-            //     headers: {'Content-Type': 'application/json'},
-            //     body: JSON.stringify(searchData)
-            // })
-        });
-    }
-
-    // Agregar validación de fechas
-    const fechaDesde = document.getElementById('fechaDesde');
-    const fechaHasta = document.getElementById('fechaHasta');
-
-    if (fechaDesde && fechaHasta) {
-        fechaDesde.addEventListener('change', function() {
-            fechaHasta.min = this.value;
-            if (fechaHasta.value && fechaHasta.value < this.value) {
-                fechaHasta.value = this.value;
+                if (!confirmDownload) {
+                    return;
+                }
             }
-        });
 
-        fechaHasta.addEventListener('change', function() {
-            if (this.value < fechaDesde.value) {
-                showNotification('La fecha hasta no puede ser anterior a la fecha desde', 'warning');
-                this.value = fechaDesde.value;
-            }
+            // Iniciar búsqueda
+            console.log('Biblioteca CCB: Iniciando búsqueda con:', searchData);
+            await startSearch(searchData);
         });
+    } else {
+        console.error('Biblioteca CCB: No se encontró el formulario searchForm');
     }
 });
+
+// Función para mostrar notificaciones (debe estar definida en el archivo principal)
+function showNotification(message, type) {
+    // Si existe la función global, usarla
+    if (typeof window.showNotification === 'function') {
+        window.showNotification(message, type);
+    } else {
+        // Implementación básica de notificación
+        const notification = document.createElement('div');
+        notification.className = `notification ${type}`;
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 1rem 1.5rem;
+            background: ${type === 'success' ? '#48bb78' : type === 'error' ? '#f56565' : '#00d4ff'};
+            color: white;
+            border-radius: 6px;
+            z-index: 1000;
+            animation: slideIn 0.3s ease;
+        `;
+        notification.textContent = message;
+        document.body.appendChild(notification);
+
+        setTimeout(() => {
+            notification.remove();
+        }, 3000);
+    }
+
+    // Log en consola para debugging
+    console.log(`[${type.toUpperCase()}] ${message}`);
+}
