@@ -47,6 +47,8 @@ class BibliotecaCCBScraper:
             'end_time': None
         }
 
+    # En el archivo scrapers/biblioteca_ccb/scraper.py, actualizar el método run:
+
     def run(self, date_filter: str = None, limit: int = None,
             browse_type: str = 'dateissued', author_filter: str = None) -> Dict:
         """
@@ -80,6 +82,10 @@ class BibliotecaCCBScraper:
                 raise ValueError("Se requiere el nombre del autor para búsqueda por autor")
 
             self.logger.info(f"Ejecutando búsqueda por autor: {author_filter}")
+
+            # IMPORTANTE: En este punto, author_filter ya debe ser el nombre exacto
+            # La resolución de nombres parciales se hace en app.py antes de llegar aquí
+
         else:
             self.logger.info("Ejecutando búsqueda sin filtros (todos los documentos)")
 
@@ -91,6 +97,12 @@ class BibliotecaCCBScraper:
                 timestamp=self.timestamp,
                 max_workers=5
             )
+
+            # Guardar información del filtro para el reporte
+            self.filter_info = {
+                'tipo': browse_type,
+                'valor': author_filter if browse_type == 'author' else date_filter
+            }
 
             # Ejecutar el scraper según el tipo de búsqueda
             if browse_type == 'author':

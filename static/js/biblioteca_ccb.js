@@ -253,61 +253,6 @@ async function getSearchProgress() {
     }
 }
 
-// Iniciar búsqueda
-async function startSearch(searchData) {
-    searchInProgress = true;
-
-    // Mostrar panel de resultados
-    const resultsPanel = document.getElementById('resultsPanel');
-    resultsPanel.style.display = 'block';
-    resultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-    // Resetear vista
-    document.getElementById('searchStatus').style.display = 'flex';
-    document.getElementById('statsGrid').style.display = 'grid';
-    document.getElementById('resultDetails').style.display = 'none';
-    document.getElementById('finalReport').style.display = 'none';
-
-    // Resetear estadísticas
-    updateStats({
-        expected: 0,
-        processed: 0,
-        downloaded: 0,
-        failed: 0
-    });
-
-    // Deshabilitar botón de búsqueda
-    document.getElementById('searchButton').disabled = true;
-
-    try {
-        const response = await fetch('/api/biblioteca_ccb/search', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(searchData)
-        });
-
-        if (!response.ok) {
-            throw new Error(`Error HTTP: ${response.status}`);
-        }
-
-        const result = await response.json();
-
-        // Iniciar polling de progreso
-        progressInterval = setInterval(getSearchProgress, 2000);
-
-        // Esperar a que termine
-        checkSearchCompletion();
-
-    } catch (error) {
-        console.error('Error iniciando búsqueda:', error);
-        showNotification('Error al iniciar la búsqueda: ' + error.message, 'error');
-        searchInProgress = false;
-        document.getElementById('searchButton').disabled = false;
-        document.getElementById('searchStatus').style.display = 'none';
-    }
-}
 
 // Verificar si la búsqueda terminó
 async function checkSearchCompletion() {
@@ -422,7 +367,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // Iniciar búsqueda
             console.log('Biblioteca CCB: Iniciando búsqueda con:', searchData);
-            await startSearch(searchData);
+            await startSearchEnhanced(searchData);
         });
     } else {
         console.error('Biblioteca CCB: No se encontró el formulario searchForm');
@@ -460,3 +405,182 @@ function showNotification(message, type) {
     // Log en consola para debugging
     console.log(`[${type.toUpperCase()}] ${message}`);
 }
+
+// Agregar estas funciones al archivo biblioteca_ccb.js
+
+// Variable global para almacenar autores encontrados
+let foundAuthors = [];
+
+// Función para mostrar modal de selección de autores
+function showAuthorSelectionModal(authors, originalQuery) {
+    // Crear el modal HTML
+    const modalHTML = `
+        <div id="authorSelectionModal" class="modal-overlay" style="display: flex;">
+            <div class="modal-content" style="max-width: 600px;">
+                <div class="modal-header">
+                    <i class="fas fa-users"></i>
+                    <h3>Seleccione un autor</h3>
+                </div>
+                <div class="modal-body">
+                    <p>Se encontraron ${authors.length} autores que coinciden con "<strong>${originalQuery}</strong>".</p>
+                    <p>Por favor, seleccione el autor específico que desea buscar:</p>
+                    
+                    <div class="author-list" style="max-height: 400px; overflow-y: auto; margin-top: 1rem;">
+                        ${authors.map((author, index) => `
+                            <div class="author-item" style="
+                                padding: 1rem;
+                                margin-bottom: 0.5rem;
+                                background: var(--bg-input);
+                                border-radius: 8px;
+                                cursor: pointer;
+                                transition: all 0.3s ease;
+                                display: flex;
+                                justify-content: space-between;
+                                align-items: center;
+                            " onclick="selectAuthor(${index})">
+                                <div>
+                                    <strong>${author.nombre}</strong>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                    <span class="badge" style="
+                                        background: var(--accent-primary);
+                                        color: var(--bg-primary);
+                                        padding: 0.25rem 0.75rem;
+                                        border-radius: 20px;
+                                        font-size: 0.875rem;
+                                    ">${author.cantidad} documento${author.cantidad !== 1 ? 's' : ''}</span>
+                                    <i class="fas fa-chevron-right" style="color: var(--text-secondary);"></i>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-secondary" onclick="closeAuthorModal()">
+                        <i class="fas fa-times"></i>
+                        Cancelar
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Agregar estilos hover
+    const style = document.createElement('style');
+    style.textContent = `
+        .author-item:hover {
+            background: var(--bg-secondary) !important;
+            transform: translateX(4px);
+        }
+    `;
+    document.head.appendChild(style);
+
+    // Insertar modal en el DOM
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+    // Guardar autores en variable global
+    foundAuthors = authors;
+}
+
+// Función para cerrar el modal
+function closeAuthorModal() {
+    const modal = document.getElementById('authorSelectionModal');
+    if (modal) {
+        modal.remove();
+    }
+    foundAuthors = [];
+
+    // Habilitar botón de búsqueda
+    document.getElementById('searchButton').disabled = false;
+}
+
+// Función para seleccionar un autor
+async function selectAuthor(index) {
+    const selectedAuthor = foundAuthors[index];
+
+    // Cerrar modal
+    closeAuthorModal();
+
+    // Actualizar el campo de entrada con el autor seleccionado
+    document.getElementById('autor').value = selectedAuthor.nombre;
+
+    // Iniciar búsqueda con el autor exacto
+    const searchData = {
+        tipo: 'arbitraje_nacional',
+        filtro: 'autor',
+        autor: selectedAuthor.nombre
+    };
+
+    console.log('Biblioteca CCB: Buscando con autor exacto:', selectedAuthor.nombre);
+    await startSearchEnhanced (searchData);
+}
+
+
+async function startSearchEnhanced(searchData) {
+    searchInProgress = true;
+
+    // Deshabilitar botón de búsqueda
+    document.getElementById('searchButton').disabled = true;
+
+    try {
+        const response = await fetch('/api/biblioteca_ccb/search', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(searchData)
+        });
+
+        const result = await response.json();
+
+        if (result.status === 'multiple_matches') {
+            // Mostrar modal de selección
+            searchInProgress = false;
+            showAuthorSelectionModal(result.matches, result.query);
+            showNotification(`Se encontraron ${result.matches.length} autores. Por favor seleccione uno.`, 'info');
+            return;
+        } else if (result.status === 'no_matches') {
+            // No se encontraron coincidencias
+            searchInProgress = false;
+            document.getElementById('searchButton').disabled = false;
+            showNotification('No se encontraron autores con ese nombre', 'warning');
+            return;
+        } else if (!response.ok) {
+            throw new Error(result.error || `Error HTTP: ${response.status}`);
+        }
+
+        // Continuar con el proceso normal de búsqueda
+        // Mostrar panel de resultados
+        const resultsPanel = document.getElementById('resultsPanel');
+        resultsPanel.style.display = 'block';
+        resultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        // Resetear vista
+        document.getElementById('searchStatus').style.display = 'flex';
+        document.getElementById('statsGrid').style.display = 'grid';
+        document.getElementById('resultDetails').style.display = 'none';
+        document.getElementById('finalReport').style.display = 'none';
+
+        // Resetear estadísticas
+        updateStats({
+            expected: 0,
+            processed: 0,
+            downloaded: 0,
+            failed: 0
+        });
+
+        // Iniciar polling de progreso
+        progressInterval = setInterval(getSearchProgress, 2000);
+
+        // Esperar a que termine
+        checkSearchCompletion();
+
+    } catch (error) {
+        console.error('Error iniciando búsqueda:', error);
+        showNotification('Error al iniciar la búsqueda: ' + error.message, 'error');
+        searchInProgress = false;
+        document.getElementById('searchButton').disabled = false;
+        document.getElementById('searchStatus').style.display = 'none';
+    }
+}
+

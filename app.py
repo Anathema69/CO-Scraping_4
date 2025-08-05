@@ -16,7 +16,7 @@ from utils.form_helpers import build_search_params
 
 
 from scrapers.biblioteca_ccb import BibliotecaCCBScraper
-
+from scrapers.biblioteca_ccb.ccb_scraper_patched import CCBArbitrajeScraper
 import os
 
 # Variable global para el estado del scraper
@@ -931,6 +931,28 @@ def biblioteca_ccb_search():
                     'error': 'Se requiere el nombre del autor',
                     'status': 'error'
                 }), 400
+                # Verificar si necesitamos resolver el nombre exacto del autor
+
+                temp_scraper = CCBArbitrajeScraper()
+                exact_author = temp_scraper.get_exact_author_match(author_filter)
+
+                if exact_author is None:
+                    # Múltiples coincidencias, necesitamos que el usuario elija
+                    matches = temp_scraper.search_authors_by_partial_name(author_filter)
+                    return jsonify({
+                        'status': 'multiple_matches',
+                        'matches': matches,
+                        'query': author_filter
+                    })
+                elif exact_author:
+                    # Usar el nombre exacto del autor
+                    author_filter = exact_author
+                else:
+                    # No se encontraron coincidencias
+                    return jsonify({
+                        'status': 'no_matches',
+                        'error': f'No se encontraron autores para: {author_filter}'
+                    }), 404
         else:
             return jsonify({
                 'error': f'Tipo de filtro no soportado: {filtro}',
@@ -1064,6 +1086,39 @@ def biblioteca_ccb_status_check():
         }), 500
 
 
+@app.route('/api/biblioteca_ccb/search_authors', methods=['POST'])
+def biblioteca_ccb_search_authors():
+    """Busca autores por nombre parcial"""
+    try:
+        data = request.get_json()
+        partial_name = data.get('partial_name', '').strip()
+
+        if not partial_name:
+            return jsonify({
+                'status': 'error',
+                'error': 'Se requiere un nombre parcial'
+            }), 400
+
+        # Crear instancia temporal del scraper
+        from scrapers.biblioteca_ccb.ccb_scraper_patched import CCBArbitrajeScraper
+        scraper = CCBArbitrajeScraper()
+
+        # Buscar autores
+        authors = scraper.search_authors_by_partial_name(partial_name)
+
+        return jsonify({
+            'status': 'success',
+            'authors': authors,
+            'total': len(authors),
+            'query': partial_name
+        })
+
+    except Exception as e:
+        app.logger.error(f"Error buscando autores: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
 @app.route('/api/biblioteca_ccb/stop', methods=['POST'])
 def biblioteca_ccb_stop():
     """Detiene la búsqueda actual"""
