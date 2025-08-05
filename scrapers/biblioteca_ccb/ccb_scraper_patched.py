@@ -25,6 +25,7 @@ class CCBArbitrajeScraper:
         self.browse_url = f"{self.base_url}/browse/dateissued"
         self.browse_author_url = f"{self.base_url}/browse/author"
         self.browse_subject_url = f"{self.base_url}/browse/subject"
+        self.browse_title_url = f"{self.base_url}/browse/title"
         self.scope = "66633b37-c004-4701-9685-446a1d42c06d"
 
         # Directorio de descargas (PDFs)
@@ -177,12 +178,9 @@ class CCBArbitrajeScraper:
 
         return {'demandante': '', 'demandado': ''}
 
-
-
-
     def get_page_items(self, page: int = 1, rpp: int = 20, starts_with: str = None,
                        browse_type: str = 'dateissued', author_value: str = None,
-                       subject_value: str = None) -> Tuple[List[str], int]:
+                       subject_value: str = None, title_value: str = None) -> Tuple[List[str], int]:
         """
         Obtiene los IDs de items de una página usando bbm.page y bbm.rpp para paginación
 
@@ -193,6 +191,7 @@ class CCBArbitrajeScraper:
             browse_type: Tipo de búsqueda ('dateissued', 'author' o 'subject')
             author_value: Nombre del autor para búsqueda por autor
             subject_value: Nombre de la materia para búsqueda por materia
+            title_value: Título para búsqueda por título
 
         Returns:
             Tupla de (lista de IDs, total de items)
@@ -217,6 +216,11 @@ class CCBArbitrajeScraper:
             if subject_value:
                 params['value'] = subject_value
                 params['bbm.return'] = '1'
+        elif browse_type == 'title':
+            url = self.browse_title_url
+            if title_value:
+                params['startsWith'] = title_value  # Títulos usan startsWith
+                self.logger.info(f"Buscando títulos que empiezan con: {title_value}")
         else:
             url = self.browse_url
             if starts_with:
@@ -548,7 +552,7 @@ class CCBArbitrajeScraper:
 
     def run(self, limit: int = None, rpp: int = 20, date_filter: str = None,
             browse_type: str = 'dateissued', author_filter: str = None,
-            subject_filter: str = None):
+            subject_filter: str = None, title_filter: str = None):
         """
         Ejecuta el scraper completo
 
@@ -559,6 +563,7 @@ class CCBArbitrajeScraper:
             browse_type: Tipo de búsqueda ('dateissued', 'author' o 'subject')
             author_filter: Nombre del autor para búsqueda por autor
             subject_filter: Nombre de la materia para búsqueda por materia
+            title_filter: Título para búsqueda por título
         """
         self.logger.info("=== INICIANDO SCRAPER CCB ARBITRAJE NACIONAL ===")
         self.logger.info(f"Items ya descargados: {len(self.progress['downloaded'])}")
@@ -573,6 +578,8 @@ class CCBArbitrajeScraper:
             self.logger.info(f"BÚSQUEDA POR AUTOR: {author_filter}")
         elif browse_type == 'subject' and subject_filter:
             self.logger.info(f"BÚSQUEDA POR MATERIA: {subject_filter}")
+        elif browse_type == 'title' and title_filter:
+            self.logger.info(f"BÚSQUEDA POR TÍTULO: {title_filter}")
 
         self.logger.info(f"Resultados por página: {rpp}")
 
@@ -602,6 +609,10 @@ class CCBArbitrajeScraper:
             elif browse_type == 'subject':
                 item_ids, page_total = self.get_page_items(
                     page, rpp, browse_type='subject', subject_value=subject_filter
+                )
+            elif browse_type == 'title':
+                item_ids, page_total = self.get_page_items(
+                    page, rpp, browse_type='title', title_value=title_filter
                 )
             else:
                 item_ids, page_total = self.get_page_items(
@@ -1080,4 +1091,103 @@ class CCBArbitrajeScraper:
         else:
             # Múltiples coincidencias, retornar None para que el usuario elija
             self.logger.info(f"Múltiples coincidencias ({len(matches)}) para: {subject_query}")
+            return None
+
+
+
+    def search_titles_by_partial_name(self, partial_title: str, max_results: int = 100) -> List[Dict[str, any]]:
+        """
+        Busca títulos por coincidencia parcial
+
+        Args:
+            partial_title: Título parcial
+            max_results: Número máximo de resultados
+
+        Returns:
+            Lista de títulos que coinciden con la búsqueda
+        """
+        titles = []
+
+        params = {
+            'scope': self.scope,
+            'bbm.rpp': max_results,
+            'bbm.page': 1,
+            'startsWith': partial_title  # Para títulos se usa startsWith
+        }
+
+        try:
+            self.logger.info(f"Buscando títulos que empiezan con: {partial_title}")
+            response = self.session.get(self.browse_title_url, params=params, timeout=30)
+            response.raise_for_status()
+
+            soup = BeautifulSoup(response.text, 'html.parser')
+
+            # Buscar todos los items en la página
+            item_containers = soup.find_all('div', class_='row')
+
+            for container in item_containers:
+                # Buscar el enlace del título
+                title_link = container.find('a', href=re.compile(r'/items/'))
+                if title_link:
+                    title_text = title_link.get_text(strip=True)
+
+                    # Contar como 1 documento por título (cada título es único)
+                    titles.append({
+                        'nombre': title_text,
+                        'cantidad': 1,  # Cada título representa 1 documento
+                        'nombre_parcial': partial_title
+                    })
+
+            # Si no encontramos con el método anterior, buscar de forma alternativa
+            if not titles:
+                # Buscar todos los enlaces a items
+                item_links = soup.find_all('a', href=re.compile(r'/items/'))
+                seen_titles = set()
+
+                for link in item_links:
+                    title_text = link.get_text(strip=True)
+                    if title_text and title_text not in seen_titles:
+                        seen_titles.add(title_text)
+                        titles.append({
+                            'nombre': title_text,
+                            'cantidad': 1,
+                            'nombre_parcial': partial_title
+                        })
+
+            self.logger.info(f"Encontrados {len(titles)} títulos para '{partial_title}'")
+            return titles
+
+        except Exception as e:
+            self.logger.error(f"Error buscando títulos: {str(e)}")
+            return []
+
+    def get_exact_title_match(self, title_query: str) -> Optional[str]:
+        """
+        Intenta obtener una coincidencia exacta del título
+
+        Args:
+            title_query: Consulta del título
+
+        Returns:
+            Nombre exacto del título o None si hay múltiples coincidencias
+        """
+        # Para títulos, siempre usamos startsWith
+        matches = self.search_titles_by_partial_name(title_query)
+
+        if len(matches) == 0:
+            self.logger.warning(f"No se encontraron títulos para: {title_query}")
+            return None
+        elif len(matches) == 1:
+            # Solo una coincidencia, usar ese título
+            self.logger.info(f"Una sola coincidencia encontrada: {matches[0]['nombre']}")
+            return matches[0]['nombre']
+        else:
+            # Verificar si alguno coincide exactamente
+            for match in matches:
+                if match['nombre'].upper() == title_query.upper():
+                    self.logger.info(f"Coincidencia exacta encontrada: {match['nombre']}")
+                    return match['nombre']
+
+            # Múltiples coincidencias, retornar None para que el usuario elija
+            self.logger.info(f"Múltiples coincidencias ({len(matches)}) para: {title_query}")
             return None

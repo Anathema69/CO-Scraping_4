@@ -1019,6 +1019,52 @@ def biblioteca_ccb_search():
                 subject_filter = exact_subject
                 app.logger.info(f"Biblioteca CCB: Usando materia exacta: {subject_filter}")
 
+        elif filtro == 'titulo':
+            title_filter = data.get('titulo', None)
+            browse_type = 'title'
+            if not title_filter:
+                return jsonify({
+                    'error': 'Se requiere el título o palabras clave',
+                    'status': 'error'
+                }), 400
+
+            # Verificar si necesitamos resolver el título exacto
+            app.logger.info(f"Biblioteca CCB: Verificando título: {title_filter}")
+
+            # Crear una instancia temporal del scraper base para verificar el título
+            from scrapers.biblioteca_ccb.ccb_scraper_patched import CCBArbitrajeScraper
+            temp_scraper = CCBArbitrajeScraper()
+
+            # Buscar títulos que coincidan
+            exact_title = temp_scraper.get_exact_title_match(title_filter)
+
+            if exact_title is None:
+                # Múltiples coincidencias, buscar títulos parciales
+                app.logger.info(f"Biblioteca CCB: Buscando coincidencias parciales para título: {title_filter}")
+                matches = temp_scraper.search_titles_by_partial_name(title_filter)
+
+                if not matches:
+                    return jsonify({
+                        'status': 'no_matches',
+                        'error': f'No se encontraron títulos para: {title_filter}'
+                    }), 404
+                elif len(matches) > 1:
+                    # Múltiples coincidencias, el usuario debe elegir
+                    app.logger.info(f"Biblioteca CCB: {len(matches)} coincidencias encontradas")
+                    return jsonify({
+                        'status': 'multiple_matches',
+                        'matches': matches,
+                        'query': title_filter,
+                        'type': 'titulo'  # Indicar el tipo para el frontend
+                    })
+                else:
+                    # Una sola coincidencia, usar ese título
+                    title_filter = matches[0]['nombre']
+                    app.logger.info(f"Biblioteca CCB: Una coincidencia encontrada, usando: {title_filter}")
+            else:
+                # Usar el título exacto
+                title_filter = exact_title
+                app.logger.info(f"Biblioteca CCB: Usando título exacto: {title_filter}")
         else:
             return jsonify({
                 'error': f'Tipo de filtro no soportado: {filtro}',
@@ -1048,6 +1094,7 @@ def biblioteca_ccb_search():
                     date_filter=date_filter,
                     author_filter=author_filter,
                     subject_filter=subject_filter if filtro == 'materia' else None,
+                    title_filter=title_filter if filtro == 'titulo' else None,
                     browse_type=browse_type,
                     limit=limit
                 )

@@ -352,8 +352,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         showNotification('Por favor ingrese palabras clave del título', 'warning');
                         return;
                     }
-                    showNotification('Búsqueda por título aún no implementada', 'info');
-                    return;
+                    break;
             }
 
             // Confirmar si no hay filtros
@@ -581,19 +580,37 @@ function clearCurrentTabFields() {
 }
 
 function showSelectionModal(items, originalQuery, type = 'autor') {
-    const titleText = type === 'materia' ? 'Seleccione una materia' : 'Seleccione un autor';
-    const itemsText = type === 'materia' ? 'materias' : 'autores';
+    let titleText, itemsText, iconClass;
+
+    switch(type) {
+        case 'materia':
+            titleText = 'Seleccione una materia';
+            itemsText = 'materias';
+            iconClass = 'tags';
+            break;
+        case 'titulo':
+            titleText = 'Seleccione un título';
+            itemsText = 'títulos';
+            iconClass = 'file-alt';
+            break;
+        default:
+            titleText = 'Seleccione un autor';
+            itemsText = 'autores';
+            iconClass = 'users';
+    }
 
     const modalHTML = `
         <div id="selectionModal" class="modal-overlay" style="display: flex;">
-            <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-content" style="max-width: 700px;">
                 <div class="modal-header">
-                    <i class="fas fa-${type === 'materia' ? 'tags' : 'users'}"></i>
+                    <i class="fas fa-${iconClass}"></i>
                     <h3>${titleText}</h3>
                 </div>
                 <div class="modal-body">
                     <p>Se encontraron ${items.length} ${itemsText} que coinciden con "<strong>${originalQuery}</strong>".</p>
-                    <p>Por favor, seleccione ${type === 'materia' ? 'la materia específica' : 'el autor específico'} que desea buscar:</p>
+                    <p>Por favor, seleccione ${type === 'materia' ? 'la materia específica' : 
+                                             type === 'titulo' ? 'el título específico' : 
+                                             'el autor específico'} que desea buscar:</p>
                     
                     <div class="item-list" style="max-height: 400px; overflow-y: auto; margin-top: 1rem;">
                         ${items.map((item, index) => `
@@ -607,11 +624,12 @@ function showSelectionModal(items, originalQuery, type = 'autor') {
                                 display: flex;
                                 justify-content: space-between;
                                 align-items: center;
+                                ${type === 'titulo' ? 'flex-direction: column; align-items: stretch;' : ''}
                             " onclick="selectItem(${index}, '${type}')">
-                                <div>
-                                    <strong>${item.nombre}</strong>
+                                <div style="${type === 'titulo' ? 'margin-bottom: 0.5rem;' : ''}">
+                                    <strong style="${type === 'titulo' ? 'font-size: 0.95rem; line-height: 1.4;' : ''}">${item.nombre}</strong>
                                 </div>
-                                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <div style="display: flex; align-items: center; gap: 0.5rem; ${type === 'titulo' ? 'align-self: flex-end;' : ''}">
                                     <span class="badge" style="
                                         background: var(--accent-primary);
                                         color: var(--bg-primary);
@@ -686,10 +704,15 @@ async function selectItem(index, type = 'autor') {
     closeSelectionModal();
 
     // Actualizar el campo de entrada con el item seleccionado
-    if (type === 'materia') {
-        document.getElementById('materia').value = selectedItem.nombre;
-    } else {
-        document.getElementById('autor').value = selectedItem.nombre;
+    switch(type) {
+        case 'materia':
+            document.getElementById('materia').value = selectedItem.nombre;
+            break;
+        case 'titulo':
+            document.getElementById('titulo').value = selectedItem.nombre;
+            break;
+        default:
+            document.getElementById('autor').value = selectedItem.nombre;
     }
 
     // Iniciar búsqueda con el item exacto
@@ -712,8 +735,10 @@ async function startSearchEnhanced(searchData) {
     document.getElementById('searchButton').disabled = true;
 
     // Mostrar loader si es búsqueda por autor o materia
-    if (searchData.filtro === 'autor' || searchData.filtro === 'materia') {
-        showSearchingLoader(`Buscando ${searchData.filtro === 'autor' ? 'autores' : 'materias'}...`);
+    if (searchData.filtro === 'autor' || searchData.filtro === 'materia' || searchData.filtro === 'titulo') {
+    let searchingText = searchData.filtro === 'autor' ? 'autores' :
+                       searchData.filtro === 'materia' ? 'materias' : 'títulos';
+    showSearchingLoader(`Buscando ${searchingText}...`);
     }
 
     try {

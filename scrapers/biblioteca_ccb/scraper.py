@@ -51,7 +51,7 @@ class BibliotecaCCBScraper:
 
     def run(self, date_filter: str = None, limit: int = None,
             browse_type: str = 'dateissued', author_filter: str = None,
-            subject_filter: str = None) -> Dict:
+            subject_filter: str = None, title_filter: str = None) -> Dict:
         """
         Ejecuta el scraper con filtros específicos
 
@@ -61,7 +61,7 @@ class BibliotecaCCBScraper:
             browse_type: Tipo de búsqueda ('dateissued' o 'author')
             author_filter: Nombre del autor para búsqueda por autor
             subject_filter: Nombre de la materia para búsqueda por materia
-
+            title_filter: Título para búsqueda por título
         Returns:
             Dict con estadísticas de la ejecución
         """
@@ -94,6 +94,11 @@ class BibliotecaCCBScraper:
 
             self.logger.info(f"Ejecutando búsqueda por materia: {subject_filter}")
 
+        elif browse_type == 'title':
+            if not title_filter:
+                raise ValueError("Se requiere el título para búsqueda por título")
+
+            self.logger.info(f"Ejecutando búsqueda por título: {title_filter}")
         else:
             self.logger.info("Ejecutando búsqueda sin filtros (todos los documentos)")
 
@@ -111,6 +116,7 @@ class BibliotecaCCBScraper:
                 'tipo': browse_type,
                 'valor': author_filter if browse_type == 'author' else
                     subject_filter if browse_type == 'subject' else
+                    title_filter if browse_type == 'title' else
                     date_filter
             }
 
@@ -128,6 +134,13 @@ class BibliotecaCCBScraper:
                     rpp=40,
                     browse_type='subject',
                     subject_filter=subject_filter
+                )
+            elif browse_type == 'title':
+                self.scraper.run(
+                    limit=limit,
+                    rpp=40,
+                    browse_type='title',
+                    title_filter=title_filter
                 )
             else:
                 self.scraper.run(

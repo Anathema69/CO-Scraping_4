@@ -154,11 +154,34 @@
 
         <!-- Por título -->
         <div id="tab-titulo" class="tab-pane">
-          <div class="form-group">
-            <label for="titulo">Título del laudo</label>
-            <input type="text" id="titulo" class="form-control" placeholder="Ingrese palabras clave del título" />
-            <small class="form-text">Busque por palabras clave en el título del laudo arbitral</small>
-          </div>
+            <div class="form-group">
+                <label for="titulo">
+                    <i class="fas fa-file-alt"></i>
+                    Título del laudo arbitral
+                </label>
+                <input
+                    type="text"
+                    id="titulo"
+                    name="titulo"
+                    class="form-control"
+                    placeholder="Ej: TRIBUNAL ARBITRAL DE ANA o título completo"
+                    autocomplete="off"
+                />
+                <small class="form-text">
+                    Ingrese el título completo o palabras clave del inicio del título
+                </small>
+            </div>
+
+            <div class="info-message">
+                <i class="fas fa-info-circle"></i>
+                <div>
+                    <p><strong>Búsqueda por título:</strong></p>
+                    <ul style="margin: 0.5rem 0 0 1rem; padding: 0; list-style-position: inside;">
+                        <li>Escriba el título completo o las primeras palabras</li>
+                        <li>La búsqueda encuentra títulos que comienzan con el texto</li>
+                    </ul>
+                </div>
+            </div>
         </div>
 
         <!-- Por materia -->
