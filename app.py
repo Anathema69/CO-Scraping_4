@@ -888,6 +888,8 @@ def biblioteca_ccb_get_authors():
 
 
 # Modificar la ruta de búsqueda existente para soportar búsqueda por autor
+# Reemplazar la función biblioteca_ccb_search completa en app.py con esta versión corregida:
+
 @app.route('/api/biblioteca_ccb/search', methods=['POST'])
 def biblioteca_ccb_search():
     """Inicia una búsqueda en la Biblioteca CCB"""
@@ -931,28 +933,43 @@ def biblioteca_ccb_search():
                     'error': 'Se requiere el nombre del autor',
                     'status': 'error'
                 }), 400
-                # Verificar si necesitamos resolver el nombre exacto del autor
 
-                temp_scraper = CCBArbitrajeScraper()
-                exact_author = temp_scraper.get_exact_author_match(author_filter)
+            # IMPORTANTE: Verificar si necesitamos resolver el nombre exacto del autor
+            app.logger.info(f"Biblioteca CCB: Verificando autor: {author_filter}")
 
-                if exact_author is None:
-                    # Múltiples coincidencias, necesitamos que el usuario elija
-                    matches = temp_scraper.search_authors_by_partial_name(author_filter)
+            # Crear una instancia temporal del scraper base para verificar el autor
+            from scrapers.biblioteca_ccb.ccb_scraper_patched import CCBArbitrajeScraper
+            temp_scraper = CCBArbitrajeScraper()
+
+            # Primero intentar búsqueda directa
+            exact_author = temp_scraper.get_exact_author_match(author_filter)
+
+            if exact_author is None:
+                # Múltiples coincidencias, buscar autores parciales
+                app.logger.info(f"Biblioteca CCB: Buscando coincidencias parciales para: {author_filter}")
+                matches = temp_scraper.search_authors_by_partial_name(author_filter)
+
+                if not matches:
+                    return jsonify({
+                        'status': 'no_matches',
+                        'error': f'No se encontraron autores para: {author_filter}'
+                    }), 404
+                elif len(matches) > 1:
+                    # Múltiples coincidencias, el usuario debe elegir
+                    app.logger.info(f"Biblioteca CCB: {len(matches)} coincidencias encontradas")
                     return jsonify({
                         'status': 'multiple_matches',
                         'matches': matches,
                         'query': author_filter
                     })
-                elif exact_author:
-                    # Usar el nombre exacto del autor
-                    author_filter = exact_author
                 else:
-                    # No se encontraron coincidencias
-                    return jsonify({
-                        'status': 'no_matches',
-                        'error': f'No se encontraron autores para: {author_filter}'
-                    }), 404
+                    # Una sola coincidencia, usar ese autor
+                    author_filter = matches[0]['nombre']
+                    app.logger.info(f"Biblioteca CCB: Una coincidencia encontrada, usando: {author_filter}")
+            else:
+                # Usar el nombre exacto del autor
+                author_filter = exact_author
+                app.logger.info(f"Biblioteca CCB: Usando autor exacto: {author_filter}")
         else:
             return jsonify({
                 'error': f'Tipo de filtro no soportado: {filtro}',

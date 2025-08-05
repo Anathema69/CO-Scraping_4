@@ -841,3 +841,112 @@ class CCBArbitrajeScraper:
             # Múltiples coincidencias, retornar None para que el usuario elija
             self.logger.info(f"Múltiples coincidencias ({len(matches)}) para: {author_query}")
             return None
+
+    def search_authors_by_partial_name(self, partial_name: str, max_results: int = 100) -> List[Dict[str, any]]:
+        """
+        Busca autores por nombre parcial
+
+        Args:
+            partial_name: Nombre parcial del autor
+            max_results: Número máximo de resultados
+
+        Returns:
+            Lista de autores que coinciden con la búsqueda
+        """
+        from urllib.parse import unquote
+        authors = []
+
+        params = {
+            'scope': self.scope,
+            'bbm.rpp': max_results,
+            'bbm.page': 1,
+            'startsWith': partial_name
+        }
+
+        try:
+            self.logger.info(f"Buscando autores que empiezan con: {partial_name}")
+            response = self.session.get(self.browse_author_url, params=params, timeout=30)
+            response.raise_for_status()
+
+            soup = BeautifulSoup(response.text, 'html.parser')
+
+            # Buscar todos los enlaces de autores
+            author_links = soup.find_all('a', href=re.compile(r'/browse/author\?.*value='))
+
+            for link in author_links:
+                href = link.get('href', '')
+                # Extraer el nombre del autor del parámetro 'value'
+                value_match = re.search(r'value=([^&]+)', href)
+                if value_match:
+                    author_name = unquote(value_match.group(1))
+
+                    # Buscar el span con la cantidad (badge)
+                    parent_div = link.parent
+                    count_span = parent_div.find('span', class_='badge')
+                    count = 0
+                    if count_span:
+                        try:
+                            count = int(count_span.text.strip())
+                        except:
+                            pass
+
+                    authors.append({
+                        'nombre': author_name,
+                        'cantidad': count,
+                        'nombre_parcial': partial_name
+                    })
+
+            self.logger.info(f"Encontrados {len(authors)} autores para '{partial_name}'")
+            return authors
+
+        except Exception as e:
+            self.logger.error(f"Error buscando autores: {str(e)}")
+            return []
+
+    def get_exact_author_match(self, author_query: str) -> Optional[str]:
+        """
+        Intenta obtener una coincidencia exacta del autor
+
+        Args:
+            author_query: Consulta del autor
+
+        Returns:
+            Nombre exacto del autor o None si hay múltiples coincidencias
+        """
+        # Primero intentar búsqueda directa
+        params = {
+            'scope': self.scope,
+            'bbm.rpp': 1,
+            'bbm.page': 1,
+            'value': author_query,
+            'bbm.return': '1'
+        }
+
+        try:
+            # Verificar si es un autor exacto
+            response = self.session.get(self.browse_author_url, params=params, timeout=30)
+
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                # Si hay resultados de items, es una coincidencia exacta
+                items = soup.find_all('a', href=re.compile(r'/items/'))
+                if items:
+                    self.logger.info(f"Encontrada coincidencia exacta para: {author_query}")
+                    return author_query
+        except:
+            pass
+
+        # Si no es exacto, buscar coincidencias parciales
+        matches = self.search_authors_by_partial_name(author_query)
+
+        if len(matches) == 0:
+            self.logger.warning(f"No se encontraron autores para: {author_query}")
+            return None
+        elif len(matches) == 1:
+            # Solo una coincidencia, usar ese autor
+            self.logger.info(f"Una sola coincidencia encontrada: {matches[0]['nombre']}")
+            return matches[0]['nombre']
+        else:
+            # Múltiples coincidencias, retornar None para que el usuario elija
+            self.logger.info(f"Múltiples coincidencias ({len(matches)}) para: {author_query}")
+            return None

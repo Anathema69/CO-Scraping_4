@@ -516,13 +516,17 @@ async function selectAuthor(index) {
 }
 
 
+// En la función startSearchEnhanced, agregar más logging justo después del try:
+
 async function startSearchEnhanced(searchData) {
+    console.log('startSearchEnhanced llamada con:', searchData);
     searchInProgress = true;
 
     // Deshabilitar botón de búsqueda
     document.getElementById('searchButton').disabled = true;
 
     try {
+        console.log('Enviando petición a /api/biblioteca_ccb/search');
         const response = await fetch('/api/biblioteca_ccb/search', {
             method: 'POST',
             headers: {
@@ -531,26 +535,30 @@ async function startSearchEnhanced(searchData) {
             body: JSON.stringify(searchData)
         });
 
+        console.log('Respuesta recibida:', response.status);
         const result = await response.json();
+        console.log('Resultado:', result);
 
         if (result.status === 'multiple_matches') {
             // Mostrar modal de selección
+            console.log('Múltiples coincidencias encontradas:', result.matches);
             searchInProgress = false;
             showAuthorSelectionModal(result.matches, result.query);
             showNotification(`Se encontraron ${result.matches.length} autores. Por favor seleccione uno.`, 'info');
             return;
         } else if (result.status === 'no_matches') {
             // No se encontraron coincidencias
+            console.log('No se encontraron coincidencias');
             searchInProgress = false;
             document.getElementById('searchButton').disabled = false;
             showNotification('No se encontraron autores con ese nombre', 'warning');
             return;
         } else if (!response.ok) {
+            console.error('Error en respuesta:', result);
             throw new Error(result.error || `Error HTTP: ${response.status}`);
         }
 
-        // Continuar con el proceso normal de búsqueda
-        // Mostrar panel de resultados
+        console.log('Iniciando búsqueda normal...');
         const resultsPanel = document.getElementById('resultsPanel');
         resultsPanel.style.display = 'block';
         resultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
