@@ -116,12 +116,40 @@
         </div>
 
         <!-- Por autor -->
+
         <div id="tab-autor" class="tab-pane">
-          <div class="form-group">
-            <label for="autor">Nombre del autor</label>
-            <input type="text" id="autor" class="form-control" placeholder="Ingrese el nombre del autor" />
-            <small class="form-text">Puede buscar por nombre completo o parcial</small>
-          </div>
+            <div class="form-group">
+                <label for="autor">
+                    <i class="fas fa-user"></i>
+                    Nombre del autor o árbitro
+                </label>
+                <input
+                    type="text"
+                    id="autor"
+                    name="autor"
+                    class="form-control"
+                    placeholder="Ej: Abela Maldonado, Andrew"
+                    list="autorList"
+                    autocomplete="off"
+                />
+                <datalist id="autorList"></datalist>
+                <small class="form-text">
+                    Ingrese el nombre completo o parcial del autor/árbitro
+                </small>
+            </div>
+
+            <div class="info-message">
+                <i class="fas fa-info-circle"></i>
+                <div>
+                    <p><strong>Búsqueda por autor:</strong></p>
+                    <ul style="margin: 0.5rem 0 0 1rem; padding: 0; list-style-position: inside;">
+                        <li>Escriba al menos 2 caracteres para ver sugerencias</li>
+                        <li>El sistema mostrará autores que coincidan con su búsqueda</li>
+                        <li>Cada autor muestra la cantidad de documentos disponibles</li>
+                        <li>Se descargarán todos los laudos del autor seleccionado</li>
+                    </ul>
+                </div>
+            </div>
         </div>
 
         <!-- Por título -->

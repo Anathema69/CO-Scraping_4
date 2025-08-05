@@ -1,9 +1,10 @@
-// Biblioteca Digital CCB - Funcionalidad
+// Biblioteca Digital CCB - Funcionalidad actualizada con búsqueda por autor
 
 // Variables globales
 let currentTab = 'fecha';
 let searchInProgress = false;
 let progressInterval = null;
+let authorsCache = null;
 
 // Inicializar años disponibles
 function initializeYears() {
@@ -17,6 +18,52 @@ function initializeYears() {
         option.textContent = year;
         yearSelect.appendChild(option);
     }
+}
+
+// Inicializar campo de autor con autocompletado
+async function initializeAuthorField() {
+    const autorInput = document.getElementById('autor');
+    const autorDatalist = document.getElementById('autorList');
+
+    // Cargar lista de autores cuando el usuario empiece a escribir
+    autorInput.addEventListener('input', async function(e) {
+        const value = e.target.value;
+
+        // Solo buscar si hay al menos 2 caracteres
+        if (value.length < 2) {
+            autorDatalist.innerHTML = '';
+            return;
+        }
+
+        // Si no tenemos cache, cargar autores
+        if (!authorsCache) {
+            showNotification('Cargando lista de autores...', 'info');
+            try {
+                const response = await fetch('/api/biblioteca_ccb/authors');
+                const data = await response.json();
+                if (data.status === 'success') {
+                    authorsCache = data.authors;
+                }
+            } catch (error) {
+                console.error('Error cargando autores:', error);
+                return;
+            }
+        }
+
+        // Filtrar autores que coincidan
+        const filtered = authorsCache.filter(author =>
+            author.nombre.toLowerCase().includes(value.toLowerCase())
+        ).slice(0, 20); // Limitar a 20 sugerencias
+
+        // Actualizar datalist
+        autorDatalist.innerHTML = '';
+        filtered.forEach(author => {
+            const option = document.createElement('option');
+            option.value = author.nombre;
+            option.textContent = `(${author.cantidad} documentos)`;
+            autorDatalist.appendChild(option);
+        });
+    });
 }
 
 // Manejar cambio de tipo de arbitraje
@@ -102,6 +149,9 @@ function resetForm() {
 
     // Ocultar panel de resultados
     document.getElementById('resultsPanel').style.display = 'none';
+
+    // Habilitar botón de búsqueda
+    document.getElementById('searchButton').disabled = false;
 
     showNotification('Filtros limpiados correctamente', 'info');
 }
@@ -283,6 +333,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Inicializar años
     initializeYears();
 
+    // Inicializar campo de autor
+    initializeAuthorField();
+
     // Auto-seleccionar la opción nacional al cargar
     const tipoArbitraje = document.getElementById('tipoArbitraje');
     if (tipoArbitraje && tipoArbitraje.value === 'nacional') {
@@ -334,8 +387,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         showNotification('Por favor ingrese el nombre del autor', 'warning');
                         return;
                     }
-                    showNotification('Búsqueda por autor aún no implementada', 'info');
-                    return;
+                    break;
 
                 case 'titulo':
                     searchData.titulo = document.getElementById('titulo').value.trim();

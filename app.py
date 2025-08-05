@@ -858,6 +858,36 @@ def biblioteca_ccb():
     return render_template('biblioteca_ccb/filters.html')
 
 
+# Agregar estas rutas en app.py después de las rutas existentes de biblioteca_ccb
+
+@app.route('/api/biblioteca_ccb/authors', methods=['GET'])
+def biblioteca_ccb_get_authors():
+    """Obtiene lista de autores disponibles"""
+    try:
+        letter = request.args.get('letter', None)
+
+        # Crear instancia temporal del scraper
+        from scrapers.biblioteca_ccb import BibliotecaCCBScraper
+        scraper = BibliotecaCCBScraper()
+
+        # Obtener lista de autores
+        authors = scraper.get_authors_preview(letter)
+
+        return jsonify({
+            'status': 'success',
+            'authors': authors,
+            'total': len(authors)
+        })
+
+    except Exception as e:
+        app.logger.error(f"Error obteniendo autores: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+# Modificar la ruta de búsqueda existente para soportar búsqueda por autor
 @app.route('/api/biblioteca_ccb/search', methods=['POST'])
 def biblioteca_ccb_search():
     """Inicia una búsqueda en la Biblioteca CCB"""
@@ -884,21 +914,35 @@ def biblioteca_ccb_search():
 
         app.logger.info(f"Biblioteca CCB: Datos recibidos: {data}")
 
-        # Validar tipo de búsqueda
-        if data.get('filtro') != 'fecha':
+        # Obtener tipo de filtro y valores
+        filtro = data.get('filtro', 'fecha')
+        date_filter = None
+        author_filter = None
+        browse_type = 'dateissued'
+
+        if filtro == 'fecha':
+            date_filter = data.get('date_filter', None)
+            browse_type = 'dateissued'
+        elif filtro == 'autor':
+            author_filter = data.get('autor', None)
+            browse_type = 'author'
+            if not author_filter:
+                return jsonify({
+                    'error': 'Se requiere el nombre del autor',
+                    'status': 'error'
+                }), 400
+        else:
             return jsonify({
-                'error': 'Solo la búsqueda por fecha está implementada actualmente',
+                'error': f'Tipo de filtro no soportado: {filtro}',
                 'status': 'not_implemented'
             }), 501
 
-        # Obtener filtro de fecha
-        date_filter = data.get('date_filter', None)
         limit = data.get('limit', None)
 
-        app.logger.info(f"Biblioteca CCB: Filtro de fecha: {date_filter}, Límite: {limit}")
+        app.logger.info(f"Biblioteca CCB: Tipo: {browse_type}, Filtro: {date_filter or author_filter}, Límite: {limit}")
 
         # Crear directorio de salida
-        output_dir = os.path.join('downloads', 'biblioteca_ccb', 'laudos_arbitraje')
+        output_dir = os.path.join('descargas_biblioteca')
         os.makedirs(output_dir, exist_ok=True)
 
         # Inicializar scraper
@@ -911,7 +955,12 @@ def biblioteca_ccb_search():
         def run_scraper():
             try:
                 app.logger.info("Biblioteca CCB: Ejecutando scraper en thread")
-                result = scraper.run(date_filter=date_filter, limit=limit)
+                result = scraper.run(
+                    date_filter=date_filter,
+                    author_filter=author_filter,
+                    browse_type=browse_type,
+                    limit=limit
+                )
                 biblioteca_ccb_status['result'] = result
                 app.logger.info(f"Biblioteca CCB: Scraper completado: {result}")
             except Exception as e:
@@ -939,7 +988,8 @@ def biblioteca_ccb_search():
         return jsonify({
             'status': 'started',
             'message': 'Búsqueda iniciada',
-            'date_filter': date_filter
+            'filtro': filtro,
+            'valor': date_filter or author_filter
         })
 
     except Exception as e:
