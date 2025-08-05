@@ -9,7 +9,7 @@ import csv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
 from typing import Dict, List, Optional, Tuple
-from urllib.parse import urlencode, urlparse, parse_qs, quote
+from urllib.parse import urlencode, urlparse, parse_qs, quote, unquote
 from urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
 
@@ -24,6 +24,7 @@ class CCBArbitrajeScraper:
         self.base_url = "https://bibliotecadigital.ccb.org.co"
         self.browse_url = f"{self.base_url}/browse/dateissued"
         self.browse_author_url = f"{self.base_url}/browse/author"
+        self.browse_subject_url = f"{self.base_url}/browse/subject"
         self.scope = "66633b37-c004-4701-9685-446a1d42c06d"
 
         # Directorio de descargas (PDFs)
@@ -176,8 +177,12 @@ class CCBArbitrajeScraper:
 
         return {'demandante': '', 'demandado': ''}
 
+
+
+
     def get_page_items(self, page: int = 1, rpp: int = 20, starts_with: str = None,
-                       browse_type: str = 'dateissued', author_value: str = None) -> Tuple[List[str], int]:
+                       browse_type: str = 'dateissued', author_value: str = None,
+                       subject_value: str = None) -> Tuple[List[str], int]:
         """
         Obtiene los IDs de items de una página usando bbm.page y bbm.rpp para paginación
 
@@ -185,8 +190,9 @@ class CCBArbitrajeScraper:
             page: número de página (1-indexed)
             rpp: Resultados por página (20 o 100)
             starts_with: Filtro de fecha (ej: "2024" o "2023-04")
-            browse_type: Tipo de búsqueda ('dateissued' o 'author')
+            browse_type: Tipo de búsqueda ('dateissued', 'author' o 'subject')
             author_value: Nombre del autor para búsqueda por autor
+            subject_value: Nombre de la materia para búsqueda por materia
 
         Returns:
             Tupla de (lista de IDs, total de items)
@@ -205,7 +211,12 @@ class CCBArbitrajeScraper:
             url = self.browse_author_url
             if author_value:
                 params['value'] = author_value
-                params['bbm.return'] = '1'  # Necesario para búsqueda por autor
+                params['bbm.return'] = '1'
+        elif browse_type == 'subject':
+            url = self.browse_subject_url
+            if subject_value:
+                params['value'] = subject_value
+                params['bbm.return'] = '1'
         else:
             url = self.browse_url
             if starts_with:
@@ -536,7 +547,8 @@ class CCBArbitrajeScraper:
             writer.writerow(row)
 
     def run(self, limit: int = None, rpp: int = 20, date_filter: str = None,
-            browse_type: str = 'dateissued', author_filter: str = None):
+            browse_type: str = 'dateissued', author_filter: str = None,
+            subject_filter: str = None):
         """
         Ejecuta el scraper completo
 
@@ -544,8 +556,9 @@ class CCBArbitrajeScraper:
             limit: Número máximo de items a procesar (None = todos)
             rpp: Resultados por página (20 o 100)
             date_filter: Filtro de fecha (ej: "2024" o "2023-04")
-            browse_type: Tipo de búsqueda ('dateissued' o 'author')
+            browse_type: Tipo de búsqueda ('dateissued', 'author' o 'subject')
             author_filter: Nombre del autor para búsqueda por autor
+            subject_filter: Nombre de la materia para búsqueda por materia
         """
         self.logger.info("=== INICIANDO SCRAPER CCB ARBITRAJE NACIONAL ===")
         self.logger.info(f"Items ya descargados: {len(self.progress['downloaded'])}")
@@ -558,6 +571,8 @@ class CCBArbitrajeScraper:
             self.logger.info(f"FILTRO DE FECHA: {date_filter}")
         elif browse_type == 'author' and author_filter:
             self.logger.info(f"BÚSQUEDA POR AUTOR: {author_filter}")
+        elif browse_type == 'subject' and subject_filter:
+            self.logger.info(f"BÚSQUEDA POR MATERIA: {subject_filter}")
 
         self.logger.info(f"Resultados por página: {rpp}")
 
@@ -565,7 +580,7 @@ class CCBArbitrajeScraper:
         self.update_manifest('en_proceso', {
             'parametros_busqueda': {
                 'tipo': browse_type,
-                'filtro': date_filter or author_filter,
+                'filtro': date_filter or author_filter or subject_filter,
                 'limite': limit,
                 'rpp': rpp
             }
@@ -583,6 +598,10 @@ class CCBArbitrajeScraper:
             if browse_type == 'author':
                 item_ids, page_total = self.get_page_items(
                     page, rpp, browse_type='author', author_value=author_filter
+                )
+            elif browse_type == 'subject':
+                item_ids, page_total = self.get_page_items(
+                    page, rpp, browse_type='subject', subject_value=subject_filter
                 )
             else:
                 item_ids, page_total = self.get_page_items(
@@ -949,4 +968,116 @@ class CCBArbitrajeScraper:
         else:
             # Múltiples coincidencias, retornar None para que el usuario elija
             self.logger.info(f"Múltiples coincidencias ({len(matches)}) para: {author_query}")
+            return None
+
+    # Agregar estos métodos a la clase CCBArbitrajeScraper en ccb_scraper_patched.py
+    # Agregar después de los métodos de autor
+
+    def search_subjects_by_partial_name(self, partial_name: str, max_results: int = 100) -> List[Dict[str, any]]:
+        """
+        Busca materias por nombre parcial
+
+        Args:
+            partial_name: Nombre parcial de la materia
+            max_results: Número máximo de resultados
+
+        Returns:
+            Lista de materias que coinciden con la búsqueda
+        """
+        from urllib.parse import unquote
+        subjects = []
+
+        params = {
+            'scope': self.scope,
+            'bbm.rpp': max_results,
+            'bbm.page': 1,
+            'startsWith': partial_name
+        }
+
+        try:
+            self.logger.info(f"Buscando materias que empiezan con: {partial_name}")
+            response = self.session.get(self.browse_subject_url, params=params, timeout=30)
+            response.raise_for_status()
+
+            soup = BeautifulSoup(response.text, 'html.parser')
+
+            # Buscar todos los enlaces de materias
+            subject_links = soup.find_all('a', href=re.compile(r'/browse/subject\?.*value='))
+
+            for link in subject_links:
+                href = link.get('href', '')
+                # Extraer el nombre de la materia del parámetro 'value'
+                value_match = re.search(r'value=([^&]+)', href)
+                if value_match:
+                    subject_name = unquote(value_match.group(1))
+
+                    # Buscar el span con la cantidad (badge)
+                    parent_div = link.parent
+                    count_span = parent_div.find('span', class_='badge')
+                    count = 0
+                    if count_span:
+                        try:
+                            count = int(count_span.text.strip())
+                        except:
+                            pass
+
+                    subjects.append({
+                        'nombre': subject_name,
+                        'cantidad': count,
+                        'nombre_parcial': partial_name
+                    })
+
+            self.logger.info(f"Encontradas {len(subjects)} materias para '{partial_name}'")
+            return subjects
+
+        except Exception as e:
+            self.logger.error(f"Error buscando materias: {str(e)}")
+            return []
+
+    def get_exact_subject_match(self, subject_query: str) -> Optional[str]:
+        """
+        Intenta obtener una coincidencia exacta de la materia
+
+        Args:
+            subject_query: Consulta de la materia
+
+        Returns:
+            Nombre exacto de la materia o None si hay múltiples coincidencias
+        """
+        # Primero intentar búsqueda directa
+        params = {
+            'scope': self.scope,
+            'bbm.rpp': 1,
+            'bbm.page': 1,
+            'value': subject_query,
+            'bbm.return': '1'
+        }
+
+        try:
+            # Verificar si es una materia exacta
+            response = self.session.get(self.browse_subject_url, params=params, timeout=30)
+
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                # Si hay resultados de items, es una coincidencia exacta
+                items = soup.find_all('a', href=re.compile(r'/items/'))
+                if items:
+                    self.logger.info(f"Encontrada coincidencia exacta para materia: {subject_query}")
+                    return subject_query
+        except:
+            pass
+
+        # Si no es exacto, buscar coincidencias parciales
+        matches = self.search_subjects_by_partial_name(subject_query)
+
+        if len(matches) == 0:
+            self.logger.warning(f"No se encontraron materias para: {subject_query}")
+            return None
+        elif len(matches) == 1:
+            # Solo una coincidencia, usar esa materia
+            self.logger.info(f"Una sola coincidencia encontrada: {matches[0]['nombre']}")
+            return matches[0]['nombre']
+        else:
+            # Múltiples coincidencias, retornar None para que el usuario elija
+            self.logger.info(f"Múltiples coincidencias ({len(matches)}) para: {subject_query}")
             return None

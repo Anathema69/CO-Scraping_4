@@ -117,6 +117,9 @@ function handleYearChange() {
 
 // Cambiar pestaña activa
 function setActiveTab(button, tabName) {
+    // Limpiar campos de la pestaña actual antes de cambiar
+    clearCurrentTabFields();
+
     // Remover clase activa de todos los botones
     const tabButtons = document.querySelectorAll('.tab-button');
     tabButtons.forEach(btn => btn.classList.remove('active'));
@@ -136,6 +139,7 @@ function setActiveTab(button, tabName) {
 
     currentTab = tabName;
 }
+
 
 // Resetear formulario
 function resetForm() {
@@ -334,6 +338,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                     break;
 
+                case 'materia':
+                    searchData.materia = document.getElementById('materia').value.trim();
+                    if (!searchData.materia) {
+                        showNotification('Por favor ingrese la materia o tema', 'warning');
+                        return;
+                    }
+                    break;
+
                 case 'titulo':
                     searchData.titulo = document.getElementById('titulo').value.trim();
                     if (!searchData.titulo) {
@@ -341,15 +353,6 @@ document.addEventListener('DOMContentLoaded', function() {
                         return;
                     }
                     showNotification('Búsqueda por título aún no implementada', 'info');
-                    return;
-
-                case 'materia':
-                    searchData.materia = document.getElementById('materia').value.trim();
-                    if (!searchData.materia) {
-                        showNotification('Por favor ingrese la materia o tema', 'warning');
-                        return;
-                    }
-                    showNotification('Búsqueda por materia aún no implementada', 'info');
                     return;
             }
 
@@ -413,110 +416,20 @@ let foundAuthors = [];
 
 // Función para mostrar modal de selección de autores
 function showAuthorSelectionModal(authors, originalQuery) {
-    // Crear el modal HTML
-    const modalHTML = `
-        <div id="authorSelectionModal" class="modal-overlay" style="display: flex;">
-            <div class="modal-content" style="max-width: 600px;">
-                <div class="modal-header">
-                    <i class="fas fa-users"></i>
-                    <h3>Seleccione un autor</h3>
-                </div>
-                <div class="modal-body">
-                    <p>Se encontraron ${authors.length} autores que coinciden con "<strong>${originalQuery}</strong>".</p>
-                    <p>Por favor, seleccione el autor específico que desea buscar:</p>
-                    
-                    <div class="author-list" style="max-height: 400px; overflow-y: auto; margin-top: 1rem;">
-                        ${authors.map((author, index) => `
-                            <div class="author-item" style="
-                                padding: 1rem;
-                                margin-bottom: 0.5rem;
-                                background: var(--bg-input);
-                                border-radius: 8px;
-                                cursor: pointer;
-                                transition: all 0.3s ease;
-                                display: flex;
-                                justify-content: space-between;
-                                align-items: center;
-                            " onclick="selectAuthor(${index})">
-                                <div>
-                                    <strong>${author.nombre}</strong>
-                                </div>
-                                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                                    <span class="badge" style="
-                                        background: var(--accent-primary);
-                                        color: var(--bg-primary);
-                                        padding: 0.25rem 0.75rem;
-                                        border-radius: 20px;
-                                        font-size: 0.875rem;
-                                    ">${author.cantidad} documento${author.cantidad !== 1 ? 's' : ''}</span>
-                                    <i class="fas fa-chevron-right" style="color: var(--text-secondary);"></i>
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-                <div class="modal-actions">
-                    <button class="btn btn-secondary" onclick="closeAuthorModal()">
-                        <i class="fas fa-times"></i>
-                        Cancelar
-                    </button>
-                </div>
-            </div>
-        </div>
-    `;
-
-    // Agregar estilos hover
-    const style = document.createElement('style');
-    style.textContent = `
-        .author-item:hover {
-            background: var(--bg-secondary) !important;
-            transform: translateX(4px);
-        }
-    `;
-    document.head.appendChild(style);
-
-    // Insertar modal en el DOM
-    document.body.insertAdjacentHTML('beforeend', modalHTML);
-
-    // Guardar autores en variable global
-    foundAuthors = authors;
+    showSelectionModal(authors, originalQuery, 'autor');
 }
 
 // Función para cerrar el modal
 function closeAuthorModal() {
-    const modal = document.getElementById('authorSelectionModal');
-    if (modal) {
-        modal.remove();
-    }
-    foundAuthors = [];
-
-    // Habilitar botón de búsqueda
-    document.getElementById('searchButton').disabled = false;
+    closeSelectionModal();
 }
 
 // Función para seleccionar un autor
 async function selectAuthor(index) {
-    const selectedAuthor = foundAuthors[index];
-
-    // Cerrar modal
-    closeAuthorModal();
-
-    // Actualizar el campo de entrada con el autor seleccionado
-    document.getElementById('autor').value = selectedAuthor.nombre;
-
-    // Iniciar búsqueda con el autor exacto
-    const searchData = {
-        tipo: 'arbitraje_nacional',
-        filtro: 'autor',
-        autor: selectedAuthor.nombre
-    };
-
-    console.log('Biblioteca CCB: Buscando con autor exacto:', selectedAuthor.nombre);
-    await startSearchEnhanced (searchData);
+    await selectItem(index, 'autor');
 }
 
 
-// En la función startSearchEnhanced, agregar más logging justo después del try:
 
 async function startSearchEnhanced(searchData) {
     console.log('startSearchEnhanced llamada con:', searchData);
@@ -592,3 +505,294 @@ async function startSearchEnhanced(searchData) {
     }
 }
 
+function showSearchingLoader(message = 'Buscando coincidencias...') {
+    const loaderHTML = `
+        <div id="searchingLoader" style="
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--bg-card);
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            z-index: 3000;
+            text-align: center;
+            min-width: 300px;
+        ">
+            <div style="
+                width: 48px;
+                height: 48px;
+                border: 4px solid var(--bg-input);
+                border-top-color: var(--accent-primary);
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+                margin: 0 auto 1rem;
+            "></div>
+            <p style="color: var(--text-primary); margin: 0; font-size: 1.1rem;">${message}</p>
+        </div>
+        <div id="searchingOverlay" style="
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(2px);
+            z-index: 2999;
+        "></div>
+        <style>
+            @keyframes spin {
+                to { transform: rotate(360deg); }
+            }
+        </style>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', loaderHTML);
+}
+
+// Función para ocultar loader de búsqueda
+function hideSearchingLoader() {
+    const loader = document.getElementById('searchingLoader');
+    const overlay = document.getElementById('searchingOverlay');
+    if (loader) loader.remove();
+    if (overlay) overlay.remove();
+}
+
+// Función para limpiar campos según la pestaña activa
+function clearCurrentTabFields() {
+    switch(currentTab) {
+        case 'fecha':
+            document.getElementById('yearFilter').value = '';
+            document.getElementById('monthFilter').value = '';
+            document.getElementById('monthFilter').disabled = true;
+            document.getElementById('monthFilter').nextElementSibling.textContent = 'Primero seleccione un año';
+            break;
+        case 'autor':
+            document.getElementById('autor').value = '';
+            break;
+        case 'materia':
+            document.getElementById('materia').value = '';
+            break;
+        case 'titulo':
+            document.getElementById('titulo').value = '';
+            break;
+    }
+}
+
+function showSelectionModal(items, originalQuery, type = 'autor') {
+    const titleText = type === 'materia' ? 'Seleccione una materia' : 'Seleccione un autor';
+    const itemsText = type === 'materia' ? 'materias' : 'autores';
+
+    const modalHTML = `
+        <div id="selectionModal" class="modal-overlay" style="display: flex;">
+            <div class="modal-content" style="max-width: 600px;">
+                <div class="modal-header">
+                    <i class="fas fa-${type === 'materia' ? 'tags' : 'users'}"></i>
+                    <h3>${titleText}</h3>
+                </div>
+                <div class="modal-body">
+                    <p>Se encontraron ${items.length} ${itemsText} que coinciden con "<strong>${originalQuery}</strong>".</p>
+                    <p>Por favor, seleccione ${type === 'materia' ? 'la materia específica' : 'el autor específico'} que desea buscar:</p>
+                    
+                    <div class="item-list" style="max-height: 400px; overflow-y: auto; margin-top: 1rem;">
+                        ${items.map((item, index) => `
+                            <div class="selection-item" style="
+                                padding: 1rem;
+                                margin-bottom: 0.5rem;
+                                background: var(--bg-input);
+                                border-radius: 8px;
+                                cursor: pointer;
+                                transition: all 0.3s ease;
+                                display: flex;
+                                justify-content: space-between;
+                                align-items: center;
+                            " onclick="selectItem(${index}, '${type}')">
+                                <div>
+                                    <strong>${item.nombre}</strong>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                    <span class="badge" style="
+                                        background: var(--accent-primary);
+                                        color: var(--bg-primary);
+                                        padding: 0.25rem 0.75rem;
+                                        border-radius: 20px;
+                                        font-size: 0.875rem;
+                                    ">${item.cantidad} documento${item.cantidad !== 1 ? 's' : ''}</span>
+                                    <i class="fas fa-chevron-right" style="color: var(--text-secondary);"></i>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-secondary" onclick="closeSelectionModal()">
+                        <i class="fas fa-times"></i>
+                        Cancelar
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Agregar estilos hover
+    const style = document.createElement('style');
+    style.textContent = `
+        .selection-item:hover {
+            background: var(--bg-secondary) !important;
+            transform: translateX(4px);
+        }
+        .item-list::-webkit-scrollbar {
+            width: 8px;
+        }
+        .item-list::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
+            border-radius: 4px;
+        }
+        .item-list::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 4px;
+        }
+        .item-list::-webkit-scrollbar-thumb:hover {
+            background: var(--accent-primary);
+        }
+    `;
+    document.head.appendChild(style);
+
+    // Insertar modal en el DOM
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+    // Guardar items en variable global
+    foundAuthors = items;
+}
+
+// Función para cerrar el modal de selección
+function closeSelectionModal() {
+    const modal = document.getElementById('selectionModal');
+    if (modal) {
+        modal.remove();
+    }
+    foundAuthors = [];
+
+    // Habilitar botón de búsqueda
+    document.getElementById('searchButton').disabled = false;
+}
+
+// Función para seleccionar un item (autor o materia)
+async function selectItem(index, type = 'autor') {
+    const selectedItem = foundAuthors[index];
+
+    // Cerrar modal
+    closeSelectionModal();
+
+    // Actualizar el campo de entrada con el item seleccionado
+    if (type === 'materia') {
+        document.getElementById('materia').value = selectedItem.nombre;
+    } else {
+        document.getElementById('autor').value = selectedItem.nombre;
+    }
+
+    // Iniciar búsqueda con el item exacto
+    const searchData = {
+        tipo: 'arbitraje_nacional',
+        filtro: type,
+        [type]: selectedItem.nombre
+    };
+
+    console.log(`Biblioteca CCB: Buscando con ${type} exacto:`, selectedItem.nombre);
+    await startSearchEnhanced(searchData);
+}
+
+// Actualizar la función startSearchEnhanced para mostrar loader
+async function startSearchEnhanced(searchData) {
+    console.log('startSearchEnhanced llamada con:', searchData);
+    searchInProgress = true;
+
+    // Deshabilitar botón de búsqueda
+    document.getElementById('searchButton').disabled = true;
+
+    // Mostrar loader si es búsqueda por autor o materia
+    if (searchData.filtro === 'autor' || searchData.filtro === 'materia') {
+        showSearchingLoader(`Buscando ${searchData.filtro === 'autor' ? 'autores' : 'materias'}...`);
+    }
+
+    try {
+        console.log('Enviando petición a /api/biblioteca_ccb/search');
+        const response = await fetch('/api/biblioteca_ccb/search', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(searchData)
+        });
+
+        console.log('Respuesta recibida:', response.status);
+        const result = await response.json();
+        console.log('Resultado:', result);
+
+        // Ocultar loader
+        hideSearchingLoader();
+
+        if (result.status === 'multiple_matches') {
+            // Mostrar modal de selección
+            console.log('Múltiples coincidencias encontradas:', result.matches);
+            searchInProgress = false;
+
+            // Determinar el tipo basado en el filtro o en la respuesta
+            const matchType = result.type || searchData.filtro;
+            showSelectionModal(result.matches, result.query, matchType);
+
+            const itemText = matchType === 'materia' ? 'materias' : 'autores';
+            showNotification(`Se encontraron ${result.matches.length} ${itemText}. Por favor seleccione uno.`, 'info');
+            return;
+        } else if (result.status === 'no_matches') {
+            // No se encontraron coincidencias
+            console.log('No se encontraron coincidencias');
+            searchInProgress = false;
+            document.getElementById('searchButton').disabled = false;
+
+            const itemText = searchData.filtro === 'materia' ? 'materias' : 'autores';
+            showNotification(`No se encontraron ${itemText} con ese nombre`, 'warning');
+            return;
+        } else if (!response.ok) {
+            console.error('Error en respuesta:', result);
+            throw new Error(result.error || `Error HTTP: ${response.status}`);
+        }
+
+        console.log('Iniciando búsqueda normal...');
+
+        // Continuar con el proceso normal de búsqueda
+        // Mostrar panel de resultados
+        const resultsPanel = document.getElementById('resultsPanel');
+        resultsPanel.style.display = 'block';
+        resultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        // Resetear vista
+        document.getElementById('searchStatus').style.display = 'flex';
+        document.getElementById('statsGrid').style.display = 'grid';
+        document.getElementById('resultDetails').style.display = 'none';
+        document.getElementById('finalReport').style.display = 'none';
+
+        // Resetear estadísticas
+        updateStats({
+            expected: 0,
+            processed: 0,
+            downloaded: 0,
+            failed: 0
+        });
+
+        // Iniciar polling de progreso
+        progressInterval = setInterval(getSearchProgress, 2000);
+
+        // Esperar a que termine
+        checkSearchCompletion();
+
+    } catch (error) {
+        console.error('Error iniciando búsqueda:', error);
+        hideSearchingLoader();
+        showNotification('Error al iniciar la búsqueda: ' + error.message, 'error');
+        searchInProgress = false;
+        document.getElementById('searchButton').disabled = false;
+        document.getElementById('searchStatus').style.display = 'none';
+    }
+}

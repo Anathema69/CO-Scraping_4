@@ -163,11 +163,36 @@
 
         <!-- Por materia -->
         <div id="tab-materia" class="tab-pane">
-          <div class="form-group">
-            <label for="materia">Materia o tema</label>
-            <input type="text" id="materia" class="form-control" placeholder="Ingrese la materia o tema" />
-            <small class="form-text">Busque por materias o temas específicos</small>
-          </div>
+            <div class="form-group">
+                <label for="materia">
+                    <i class="fas fa-tags"></i>
+                    Materia o tema
+                </label>
+                <input
+                    type="text"
+                    id="materia"
+                    name="materia"
+                    class="form-control"
+                    placeholder="Ej: Arbitraje comercial, Contratos, etc."
+                    autocomplete="off"
+                />
+                <small class="form-text">
+                    Ingrese la materia o tema de interés
+                </small>
+            </div>
+
+            <div class="info-message">
+                <i class="fas fa-info-circle"></i>
+                <div>
+                    <p><strong>Búsqueda por materia:</strong></p>
+                    <ul style="margin: 0.5rem 0 0 1rem; padding: 0; list-style-position: inside;">
+                        <li>Escriba el nombre completo o parcial de la materia</li>
+                        <li>Si hay múltiples coincidencias, podrá seleccionar la correcta</li>
+                        <li>Cada materia muestra la cantidad de documentos disponibles</li>
+                        <li>Se descargarán todos los laudos de la materia seleccionada</li>
+                    </ul>
+                </div>
+            </div>
         </div>
       </div>
 

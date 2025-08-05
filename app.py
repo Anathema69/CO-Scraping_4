@@ -87,6 +87,7 @@ def jurisprudencia_start_scraping():
         active_scrapers[f'jurisprudencia_{timestamp}'] = scraper
 
         # Ejecutar scraping en un hilo separado
+        # run para jurisprudencia
         def run_scraper():
             try:
                 logger.info("Iniciando proceso de scraping de jurisprudencia...")
@@ -345,6 +346,7 @@ def tesauro_start_scraping():
         active_scrapers[f'tesauro_{timestamp}'] = scraper
 
         # Ejecutar scraping en un hilo separado
+        # Para tsauro
         def run_scraper():
             try:
                 logger.info("Iniciando scraping del tesauro...")
@@ -585,6 +587,7 @@ def consejo_estado_start_scraping():
         active_scrapers[f'consejo_estado_{timestamp}'] = scraper
 
         # Ejecutar scraping en un hilo separado
+        # run para consejo_estado
         def run_scraper():
             try:
                 logger.info("Iniciando scraping del Consejo de Estado...")
@@ -887,8 +890,7 @@ def biblioteca_ccb_get_authors():
         }), 500
 
 
-# Modificar la ruta de búsqueda existente para soportar búsqueda por autor
-# Reemplazar la función biblioteca_ccb_search completa en app.py con esta versión corregida:
+
 
 @app.route('/api/biblioteca_ccb/search', methods=['POST'])
 def biblioteca_ccb_search():
@@ -970,6 +972,53 @@ def biblioteca_ccb_search():
                 # Usar el nombre exacto del autor
                 author_filter = exact_author
                 app.logger.info(f"Biblioteca CCB: Usando autor exacto: {author_filter}")
+        elif filtro == 'materia':
+            subject_filter = data.get('materia', None)
+            browse_type = 'subject'
+            if not subject_filter:
+                return jsonify({
+                    'error': 'Se requiere el nombre de la materia',
+                    'status': 'error'
+                }), 400
+
+            # Verificar si necesitamos resolver el nombre exacto de la materia
+            app.logger.info(f"Biblioteca CCB: Verificando materia: {subject_filter}")
+
+            # Crear una instancia temporal del scraper base para verificar la materia
+            from scrapers.biblioteca_ccb.ccb_scraper_patched import CCBArbitrajeScraper
+            temp_scraper = CCBArbitrajeScraper()
+
+            # Primero intentar búsqueda directa
+            exact_subject = temp_scraper.get_exact_subject_match(subject_filter)
+
+            if exact_subject is None:
+                # Múltiples coincidencias, buscar materias parciales
+                app.logger.info(f"Biblioteca CCB: Buscando coincidencias parciales para materia: {subject_filter}")
+                matches = temp_scraper.search_subjects_by_partial_name(subject_filter)
+
+                if not matches:
+                    return jsonify({
+                        'status': 'no_matches',
+                        'error': f'No se encontraron materias para: {subject_filter}'
+                    }), 404
+                elif len(matches) > 1:
+                    # Múltiples coincidencias, el usuario debe elegir
+                    app.logger.info(f"Biblioteca CCB: {len(matches)} coincidencias encontradas")
+                    return jsonify({
+                        'status': 'multiple_matches',
+                        'matches': matches,
+                        'query': subject_filter,
+                        'type': 'materia'  # Indicar el tipo para el frontend
+                    })
+                else:
+                    # Una sola coincidencia, usar esa materia
+                    subject_filter = matches[0]['nombre']
+                    app.logger.info(f"Biblioteca CCB: Una coincidencia encontrada, usando: {subject_filter}")
+            else:
+                # Usar el nombre exacto de la materia
+                subject_filter = exact_subject
+                app.logger.info(f"Biblioteca CCB: Usando materia exacta: {subject_filter}")
+
         else:
             return jsonify({
                 'error': f'Tipo de filtro no soportado: {filtro}',
@@ -991,12 +1040,14 @@ def biblioteca_ccb_search():
         biblioteca_ccb_status['result'] = None
 
         # Función para ejecutar en thread
+        # run para biblioteca
         def run_scraper():
             try:
                 app.logger.info("Biblioteca CCB: Ejecutando scraper en thread")
                 result = scraper.run(
                     date_filter=date_filter,
                     author_filter=author_filter,
+                    subject_filter=subject_filter if filtro == 'materia' else None,
                     browse_type=browse_type,
                     limit=limit
                 )

@@ -50,7 +50,8 @@ class BibliotecaCCBScraper:
     # En el archivo scrapers/biblioteca_ccb/scraper.py, actualizar el método run:
 
     def run(self, date_filter: str = None, limit: int = None,
-            browse_type: str = 'dateissued', author_filter: str = None) -> Dict:
+            browse_type: str = 'dateissued', author_filter: str = None,
+            subject_filter: str = None) -> Dict:
         """
         Ejecuta el scraper con filtros específicos
 
@@ -59,6 +60,7 @@ class BibliotecaCCBScraper:
             limit: Límite de documentos a procesar
             browse_type: Tipo de búsqueda ('dateissued' o 'author')
             author_filter: Nombre del autor para búsqueda por autor
+            subject_filter: Nombre de la materia para búsqueda por materia
 
         Returns:
             Dict con estadísticas de la ejecución
@@ -86,6 +88,12 @@ class BibliotecaCCBScraper:
             # IMPORTANTE: En este punto, author_filter ya debe ser el nombre exacto
             # La resolución de nombres parciales se hace en app.py antes de llegar aquí
 
+        elif browse_type == 'subject':
+            if not subject_filter:
+                raise ValueError("Se requiere el nombre de la materia para búsqueda por materia")
+
+            self.logger.info(f"Ejecutando búsqueda por materia: {subject_filter}")
+
         else:
             self.logger.info("Ejecutando búsqueda sin filtros (todos los documentos)")
 
@@ -101,7 +109,9 @@ class BibliotecaCCBScraper:
             # Guardar información del filtro para el reporte
             self.filter_info = {
                 'tipo': browse_type,
-                'valor': author_filter if browse_type == 'author' else date_filter
+                'valor': author_filter if browse_type == 'author' else
+                    subject_filter if browse_type == 'subject' else
+                    date_filter
             }
 
             # Ejecutar el scraper según el tipo de búsqueda
@@ -111,6 +121,13 @@ class BibliotecaCCBScraper:
                     rpp=40,
                     browse_type='author',
                     author_filter=author_filter
+                )
+            elif browse_type == 'subject':
+                self.scraper.run(
+                    limit=limit,
+                    rpp=40,
+                    browse_type='subject',
+                    subject_filter=subject_filter
                 )
             else:
                 self.scraper.run(
