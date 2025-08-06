@@ -1,0 +1,123 @@
+# ================
+# RUTAS DE LA DIAN
+# ================
+
+@app.route('/dian/start_scraping', methods=['POST'])
+def dian_start_scraping():
+    """Iniciar proceso de scraping de la DIAN"""
+    try:
+        # Obtener año y mes (si no se envía mes, se procesan todos)
+        year = request.form.get('year', '').strip()
+        month = request.form.get('month', '').strip()
+        if not year:
+            return jsonify({'status': 'error', 'message': 'El año es requerido'}), 400
+        year = int(year)
+        months = [int(month)] if month else list(range(1, 13))
+
+        # Timestamp único para este run
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+
+        # Directorio de logs
+        log_dir = Path(f"logs/dian_{timestamp}")
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        # Configurar logging a archivo
+        fh = logging.FileHandler(log_dir / 'dian_scraping.log')
+        fh.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(fh)
+
+        # Carpeta raíz de descargas
+        base_folder = 'descargas_dian'
+        Path(base_folder).mkdir(exist_ok=True)
+
+        # Crear instancia del scraper
+        scraper = DIANScraper()
+        dian_status.update({
+            'in_progress': True,
+            'scraper': scraper,
+            'thread': None,
+            'timestamp': timestamp,
+            'logs': log_dir,
+            'result': None
+        })
+
+        # Función que corre en background
+        def run_scraper():
+            try:
+                all_docs = []
+                for m in months:
+                    docs = scraper.scrape_month(year, m, download_docs=True)
+                    for doc in docs:
+                        scraper.save_document(doc, base_folder, year, m)
+                    all_docs.extend(docs)
+
+                # Generar manifiesto final
+                manifest = {
+                    'timestamp': timestamp,
+                    'year': year,
+                    'months': months,
+                    'total_documents': len(all_docs),
+                    'status': 'completed'
+                }
+                with open(log_dir / 'manifest.json', 'w', encoding='utf-8') as f:
+                    json.dump(manifest, f, ensure_ascii=False, indent=2)
+
+                dian_status['result'] = manifest
+
+            except Exception as e:
+                logger.error(f"Error en scraping DIAN: {e}", exc_info=True)
+                manifest = {'timestamp': timestamp, 'error': str(e), 'status': 'error'}
+                with open(log_dir / 'manifest.json', 'w', encoding='utf-8') as f:
+                    json.dump(manifest, f, ensure_ascii=False, indent=2)
+                dian_status['result'] = manifest
+
+            finally:
+                dian_status['in_progress'] = False
+                logger.removeHandler(fh)
+
+        # Lanzar thread
+        thread = threading.Thread(target=run_scraper)
+        thread.daemon = True
+        thread.start()
+        dian_status['thread'] = thread
+
+        return jsonify({
+            'status': 'started',
+            'timestamp': timestamp,
+            'log_dir': str(log_dir),
+            'descargas_dir': base_folder
+        })
+
+    except Exception as e:
+        logger.error(f"Error iniciando scraping DIAN: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/dian/status/<timestamp>')
+def dian_status_check(timestamp):
+    """Consultar estado del scraping de la DIAN"""
+    if dian_status.get('timestamp') != timestamp:
+        return jsonify({'status': 'not_found'}), 404
+
+    if dian_status['in_progress']:
+        return jsonify({'status': 'in_progress'})
+
+    return jsonify({
+        'status': dian_status['result'].get('status', 'completed'),
+        'result': dian_status['result']
+    })
+
+
+@app.route('/dian/download_manifest/<timestamp>')
+def dian_download_manifest(timestamp):
+    """Descargar manifiesto JSON del scraping"""
+    try:
+        manifest_path = Path(f"logs/dian_{timestamp}/manifest.json")
+        return send_file(
+            manifest_path,
+            as_attachment=True,
+            download_name=f'dian_manifest_{timestamp}.json',
+            mimetype='application/json'
+        )
+    except Exception as e:
+        return str(e), 404

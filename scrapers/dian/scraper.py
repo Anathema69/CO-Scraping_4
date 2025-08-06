@@ -1,3 +1,6 @@
+# scrapers/dian/scraper.py
+# Versión completa del scraper DIAN con tracking de progreso
+
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
@@ -8,23 +11,61 @@ import re
 from typing import Dict, List, Optional
 from datetime import datetime
 import logging
-
+import threading
 
 logger = logging.getLogger(__name__)
 
 
-class DIANScraper:
-    def __init__(self):
+class DIANScraperImproved:
+    """Scraper DIAN completo con tracking de progreso"""
+
+    def __init__(self, progress_callback=None):
         self.session = requests.Session()
         self.base_url = "https://cijuf.org.co/normatividad/conceptos-y-oficios-dian"
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
         self.session.headers.update(self.headers)
-        self.processed_urls = set()  # Para evitar duplicados
+        self.processed_urls = set()
+
+        # Atributos para tracking de progreso
+        self.progress_callback = progress_callback
+        self.stats = {
+            'expected': 0,  # Se actualizará dinámicamente
+            'processed': 0,
+            'pdfs_downloaded': 0,
+            'errors': 0,
+            'total_size': 0,
+            'current_action': 'Inicializando...',
+            'documents': []  # Lista de documentos procesados (sin objetos BeautifulSoup)
+        }
+        self.lock = threading.Lock()
+
+    def update_progress(self, **kwargs):
+        """Actualizar estadísticas de progreso de forma thread-safe"""
+        with self.lock:
+            self.stats.update(kwargs)
+            if self.progress_callback:
+                # Crear una copia limpia para JSON
+                stats_copy = {}
+                for key, value in self.stats.items():
+                    if key == 'documents':
+                        # Limpiar documentos para que sean serializables
+                        clean_docs = []
+                        for doc in value:
+                            clean_doc = {}
+                            for k, v in doc.items():
+                                # Excluir soup y content_div que no son serializables
+                                if k not in ['soup', 'content_div']:
+                                    clean_doc[k] = v
+                            clean_docs.append(clean_doc)
+                        stats_copy[key] = clean_docs
+                    else:
+                        stats_copy[key] = value
+                self.progress_callback(stats_copy)
 
     def scrape_month(self, year: int, month: int, download_docs: bool = True, max_pages: int = 10) -> List[Dict]:
-        """Obtener todos los documentos de un mes específico"""
+        """Obtener todos los documentos de un mes específico con tracking"""
         documents = []
         month_str = f"{month:02d}"
         base_month_url = f"{self.base_url}/{year}/{month_str}"
@@ -32,11 +73,19 @@ class DIANScraper:
         page_num = 0
         consecutive_empty = 0
 
+        self.update_progress(
+            current_action=f"Analizando contenido de {year}/{month_str}..."
+        )
         logger.info(f"Iniciando scraping de {year}/{month_str}")
+
+        # NO hacer estimación previa, actualizar expected según se encuentren documentos
 
         while page_num < max_pages and consecutive_empty < 2:
             url = f"{base_month_url}?page={page_num}"
 
+            self.update_progress(
+                current_action=f"Procesando página {page_num + 1} de {year}/{month_str}"
+            )
             logger.info(f"Procesando página {page_num}: {url}")
 
             try:
@@ -45,6 +94,7 @@ class DIANScraper:
                     logger.warning(f"Error HTTP {response.status_code} en página {page_num}")
                     consecutive_empty += 1
                     page_num += 1
+                    self.update_progress(errors=self.stats['errors'] + 1)
                     continue
 
                 # Extraer enlaces de la página
@@ -53,11 +103,17 @@ class DIANScraper:
                 if not doc_links:
                     logger.info(f"Página {page_num} vacía")
                     consecutive_empty += 1
-                    if page_num >= 3:  # Si página 3+ está vacía, probablemente no hay más
+                    if page_num >= 3:
                         break
                 else:
                     logger.info(f"Encontrados {len(doc_links)} documentos en página {page_num}")
                     consecutive_empty = 0
+
+                    # Actualizar documentos esperados basado en lo encontrado
+                    if page_num == 0:
+                        # En la primera página, estimar el total basado en documentos encontrados
+                        estimated_total = len(doc_links) * 3  # Estimación conservadora
+                        self.update_progress(expected=self.stats['expected'] + estimated_total)
 
                     if download_docs:
                         for i, link_info in enumerate(doc_links, 1):
@@ -66,31 +122,66 @@ class DIANScraper:
                                 continue
 
                             try:
-                                logger.info(
-                                    f"  [{i}/{len(doc_links)}] Procesando: {link_info.get('numero', 'Sin número')}")
+                                self.update_progress(
+                                    current_action=f"Procesando docuementos de {year}/{month_str}"
+                                )
+
                                 doc_data = self.process_document(link_info['url'])
                                 if doc_data:
                                     doc_data.update(link_info)
                                     documents.append(doc_data)
                                     self.processed_urls.add(link_info['url'])
+
+                                    # Crear versión limpia del documento para stats
+                                    clean_doc = {k: v for k, v in doc_data.items()
+                                                 if k not in ['soup', 'content_div']}
+                                    self.stats['documents'].append(clean_doc)
+
+                                    #self.update_progress(processed=self.stats['processed'] + 1)
+
                                 time.sleep(1)
                             except Exception as e:
                                 logger.error(f"Error procesando {link_info['url']}: {e}")
+                                self.update_progress(errors=self.stats['errors'] + 1)
                     else:
                         documents.extend(doc_links)
+                        self.update_progress(processed=self.stats['processed'] + len(doc_links))
 
                 page_num += 1
 
             except Exception as e:
                 logger.error(f"Error en página {page_num}: {e}")
+                self.update_progress(errors=self.stats['errors'] + 1)
                 consecutive_empty += 1
                 page_num += 1
 
         logger.info(f"Total documentos encontrados en {year}/{month_str}: {len(documents)}")
+        # No agregar documents directamente a stats porque pueden contener objetos soup
         return documents
 
+    def _estimate_documents(self, base_url: str, max_pages: int) -> int:
+        """Estimar cantidad de documentos disponibles"""
+        count = 0
+        for page in range(min(3, max_pages)):
+            try:
+                url = f"{base_url}?page={page}"
+                response = self.session.get(url, timeout=10)
+                if response.status_code == 200:
+                    links = self.extract_document_links_from_listing(response.text)
+                    count += len(links)
+                    if not links and page > 0:
+                        break
+            except:
+                pass
+
+        # Estimar total basado en páginas iniciales
+        if count > 0 and max_pages > 3:
+            estimated = int(count * (max_pages / 3) * 0.7)
+            return estimated
+        return count
+
     def extract_document_links_from_listing(self, html_content: str) -> List[Dict]:
-        """Extraer enlaces mejorado de la página de listado"""
+        """Extraer enlaces de la página de listado"""
         documents = []
         soup = BeautifulSoup(html_content, 'html.parser')
 
@@ -143,7 +234,7 @@ class DIANScraper:
         return documents
 
     def process_document(self, doc_url: str) -> Optional[Dict]:
-        """Procesar un documento individual y retornar con el soup completo"""
+        """Procesar un documento individual"""
         try:
             response = self.session.get(doc_url, timeout=30)
             if response.status_code != 200:
@@ -152,8 +243,6 @@ class DIANScraper:
 
             soup = BeautifulSoup(response.text, 'html.parser')
             doc_info = self.extract_document_info(soup, doc_url)
-
-
             doc_info['soup'] = soup
 
             return doc_info
@@ -172,7 +261,7 @@ class DIANScraper:
             "tema": "",
             "descriptor": "",
             "archivos": [],
-            "content_div": None
+            # NO incluir content_div aquí para evitar problemas de serialización
         }
 
         # Buscar por campos con clases específicas
@@ -213,6 +302,7 @@ class DIANScraper:
                 desc_text = re.sub(r'^Descriptor(es)?:\s*', '', desc_text)
                 info["descriptor"] = desc_text
 
+        # Buscar número en el H1 si no se encontró
         if not info["numero"]:
             h1 = soup.find('h1', class_='page-header')
             if h1:
@@ -221,6 +311,7 @@ class DIANScraper:
                 if numero_match:
                     info["numero"] = numero_match.group(1)
 
+        # Buscar archivos PDF
         archivo_field = soup.find('div', class_='field--name-field-archivo')
         if archivo_field:
             for link in archivo_field.find_all('a', href=True):
@@ -233,6 +324,7 @@ class DIANScraper:
                         "url": pdf_url
                     })
 
+        # Buscar PDFs en todo el documento si no se encontraron
         if not info["archivos"]:
             for link in soup.find_all('a', href=True):
                 href = link['href']
@@ -245,15 +337,10 @@ class DIANScraper:
                             "url": pdf_url
                         })
 
-        # CORRECCIÓN CRÍTICA: Guardar el contenido completo del div
-        content_div = soup.find("div", class_="region region-content")
-        if content_div:
-            # Limpiar scripts y estilos ANTES de asignar
-            for element in content_div.find_all(['script', 'style']):
-                element.decompose()
-            # Asignar el div completo, NO una copia vacía
-            info["content_div"] = content_div
+        # NO guardar content_div en el diccionario info para evitar problemas de serialización
+        # El content_div se procesará directamente desde el soup cuando se necesite
 
+        # Buscar tema en el body si no se encontró
         if not info["tema"]:
             body_field = soup.find('div', class_='field--name-body')
             if body_field:
@@ -291,10 +378,25 @@ class DIANScraper:
         return f"Dirección de Impuestos y Aduanas Nacionales, {tipo} nro. {numero} de {fecha_formateada}"
 
     def save_document(self, doc_data: Dict, base_folder: str, year: int, month: int):
-        """Guardar documento - versión corregida usando el soup original"""
+        """Guardar documento con tracking de progreso"""
         try:
             tema = doc_data.get('tema', '').strip() or "SIN_CLASIFICAR"
-            tema_folder = tema.upper().replace(" ", "_").replace("/", "_")
+
+            # Limpiar el tema para crear nombre de carpeta válido en Windows
+            # Eliminar caracteres no permitidos: < > : " / \ | ? * y caracteres especiales
+            tema_folder = tema.upper()
+            # Reemplazar caracteres problemáticos
+            caracteres_invalidos = ['<', '>', ':', '"', '/', '\\', '|', '?', '*', '\xa0', '\n', '\r', '\t']
+            for char in caracteres_invalidos:
+                tema_folder = tema_folder.replace(char, '_')
+
+            # Reemplazar múltiples espacios o guiones bajos consecutivos por uno solo
+            tema_folder = re.sub(r'[_\s]+', '_', tema_folder)
+            # Eliminar puntos al final (Windows no permite)
+            tema_folder = tema_folder.rstrip('.')
+            # Limitar longitud del nombre (Windows tiene límite de 255 caracteres)
+            if len(tema_folder) > 150:
+                tema_folder = tema_folder[:150]
 
             year_folder = os.path.join(base_folder, str(year))
             month_folder = os.path.join(year_folder, f"{month:02d}")
@@ -311,10 +413,11 @@ class DIANScraper:
                 logger.info(f"Archivo ya existe: {safe_filename}")
                 return
 
-            # USAR EL SOUP ORIGINAL DEL DOCUMENTO
+            # Usar el soup original del documento
             soup = doc_data.get('soup')
             if not soup:
                 logger.error(f"No hay soup disponible para {doc_data.get('numero')}")
+                self.update_progress(errors=self.stats['errors'] + 1)
                 return
 
             with open(html_path, 'w', encoding='utf-8') as f:
@@ -354,7 +457,7 @@ class DIANScraper:
                     f.write('</ul></div>')
                 f.write('</div>')
 
-                # CORRECCIÓN: Usar el div del soup original, igual que el script original
+                # Usar el div del soup original
                 f.write('<div class="content">')
                 content_div = soup.find("div", class_="region region-content")
                 if content_div:
@@ -371,20 +474,36 @@ class DIANScraper:
 
             logger.info(f"Guardado: {formatted_name}")
 
+            # Descargar PDFs adjuntos y actualizar contador
+            pdfs_en_documento = len(doc_data.get("archivos", []))
+            pdfs_descargados_doc = 0
+
             for archivo in doc_data.get("archivos", []):
                 url = archivo.get("url")
                 nombre = archivo.get("nombre", "").replace(" ", "_")
                 if url:
                     pdf_filename = f"{safe_filename}_{nombre}"
+                    self.update_progress(
+                        current_action=f"Descargando PDF: {nombre[:50]}..."
+                    )
                     success = self.download_pdf(url, tema_path, pdf_filename)
-                    if not success:
+                    if success:
+                        pdfs_descargados_doc += 1
+                    else:
                         logger.warning(f"No se pudo descargar PDF: {url}")
+
+            # Si no había PDFs para descargar, actualizar progreso igualmente
+            if pdfs_en_documento == 0:
+                self.update_progress(
+                    current_action=f"Documento guardado sin PDFs adjuntos"
+                )
 
         except Exception as e:
             logger.error(f"Error guardando documento: {e}")
+            self.update_progress(errors=self.stats['errors'] + 1)
 
     def download_pdf(self, pdf_url: str, folder: str, filename: str) -> bool:
-        """Descargar PDF"""
+        """Descargar PDF con tracking de tamaño"""
         try:
             if not filename.endswith('.pdf'):
                 filename = filename + '.pdf'
@@ -397,18 +516,28 @@ class DIANScraper:
 
             response = self.session.get(pdf_url, stream=True, timeout=60)
             if response.status_code == 200:
+                file_size = int(response.headers.get('content-length', 0))
+
                 with open(filepath, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=8192):
                         if chunk:
                             f.write(chunk)
+
+                # Actualizar estadísticas
+                self.update_progress(
+                    pdfs_downloaded=self.stats['pdfs_downloaded'] + 1,
+                    total_size=self.stats['total_size'] + file_size,
+                    current_action=f"PDF descargado: {os.path.basename(filename)}"
+                )
+
                 logger.info(f"  PDF descargado: {filename}")
                 return True
             else:
                 logger.warning(f"  Error HTTP {response.status_code} descargando PDF")
+                self.update_progress(errors=self.stats['errors'] + 1)
                 return False
 
         except Exception as e:
             logger.error(f"  Error descargando PDF: {e}")
+            self.update_progress(errors=self.stats['errors'] + 1)
             return False
-
-

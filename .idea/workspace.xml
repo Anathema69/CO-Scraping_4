@@ -7,10 +7,11 @@
     <list default="true" id="f76dc122-a757-4c10-b472-ca4174a9cd63" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/app.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/scrapers/biblioteca_ccb/ccb_scraper_patched.py" beforeDir="false" afterPath="$PROJECT_DIR$/scrapers/biblioteca_ccb/ccb_scraper_patched.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/scrapers/biblioteca_ccb/scraper.py" beforeDir="false" afterPath="$PROJECT_DIR$/scrapers/biblioteca_ccb/scraper.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/js/biblioteca_ccb.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/biblioteca_ccb.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/templates/biblioteca_ccb/filters.html" beforeDir="false" afterPath="$PROJECT_DIR$/templates/biblioteca_ccb/filters.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrapers/dian/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/scrapers/dian/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrapers/dian/scraper.py" beforeDir="false" afterPath="$PROJECT_DIR$/scrapers/dian/scraper.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/js/dian.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/dian.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/templates/dian/filters.html" beforeDir="false" afterPath="$PROJECT_DIR$/templates/dian/filters.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/templates/dian/html_filters.txt" beforeDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -119,7 +120,7 @@
       <option name="INTERPRETER_OPTIONS" value="" />
       <option name="PARENT_ENVS" value="true" />
       <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
       <option name="IS_MODULE_SDK" value="false" />
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
@@ -174,6 +175,7 @@
       <workItem from="1754337797948" duration="7120000" />
       <workItem from="1754364021455" duration="3995000" />
       <workItem from="1754406729540" duration="5822000" />
+      <workItem from="1754482108853" duration="3633000" />
     </task>
     <servers />
   </component>
@@ -182,7 +184,7 @@
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/CO_Scraping_4$Flask__app_py_.coverage" NAME="Flask (app.py) Coverage Results" MODIFIED="1754006336037" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="" />
-    <SUITE FILE_PATH="coverage/CO_Scraping_4$CO_Scraping_4.coverage" NAME="CO-Scraping_4 Coverage Results" MODIFIED="1754412166921" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="" />
+    <SUITE FILE_PATH="coverage/CO_Scraping_4$CO_Scraping_4.coverage" NAME="CO-Scraping_4 Coverage Results" MODIFIED="1754485459744" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/CO_Scraping_4$test_run.coverage" NAME="test_run Coverage Results" MODIFIED="1754350283592" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/scrapers/biblioteca_ccb" />
   </component>
 </project>

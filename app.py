@@ -15,7 +15,7 @@ from pathlib import Path
 from scrapers.jurisprudencia.scraper import JudicialScraperV2
 from scrapers.tesauro.scraper import TesauroScraper
 from utils.form_helpers import build_search_params
-from scrapers.dian.scraper import DIANScraper
+from scrapers.dian.scraper import DIANScraperImproved
 from scrapers.biblioteca_ccb import BibliotecaCCBScraper
 from scrapers.biblioteca_ccb.ccb_scraper_patched import CCBArbitrajeScraper
 
@@ -28,15 +28,8 @@ biblioteca_ccb_status = {
     'result': None
 }
 
-# Estado global para DIAN
-dian_status = {
-    'in_progress': False,
-    'scraper': None,
-    'thread': None,
-    'timestamp': None,
-    'logs': None,
-    'result': None
-}
+# Variable global para el estado del scraper DIAN
+dian_processes = {}
 
 app = Flask(__name__)
 
@@ -1312,94 +1305,168 @@ def biblioteca_ccb_stats():
             'stats': {}
         }), 500
 
-# ================
-# RUTAS DE LA DIAN
-# ================
+
+@app.route('/dian')
+def dian_page():
+    """Página principal de DIAN"""
+    return render_template('dian/filters.html')
+
 
 @app.route('/dian/start_scraping', methods=['POST'])
 def dian_start_scraping():
-    """Iniciar proceso de scraping de la DIAN"""
+    """Iniciar proceso de scraping de la DIAN con tracking mejorado"""
     try:
-        # Obtener año y mes (si no se envía mes, se procesan todos)
+        # Obtener año y mes
         year = request.form.get('year', '').strip()
         month = request.form.get('month', '').strip()
+
         if not year:
             return jsonify({'status': 'error', 'message': 'El año es requerido'}), 400
+
         year = int(year)
         months = [int(month)] if month else list(range(1, 13))
 
-        # Timestamp único para este run
+        # Timestamp único para este proceso
         timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
 
-        # Directorio de logs
+        # Crear directorios necesarios
         log_dir = Path(f"logs/dian_{timestamp}")
         log_dir.mkdir(parents=True, exist_ok=True)
 
-        # Configurar logging a archivo
+        base_folder = Path('descargas_dian')
+        base_folder.mkdir(exist_ok=True)
+
+        # Configurar logging
         fh = logging.FileHandler(log_dir / 'dian_scraping.log')
         fh.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger = logging.getLogger('DIANScraper')
         logger.addHandler(fh)
+        logger.setLevel(logging.INFO)
 
-        # Carpeta raíz de descargas
-        base_folder = 'descargas_dian'
-        Path(base_folder).mkdir(exist_ok=True)
-
-        # Crear instancia del scraper
-        scraper = DIANScraper()
-        dian_status.update({
-            'in_progress': True,
-            'scraper': scraper,
-            'thread': None,
+        # Estructura para almacenar el estado del proceso
+        process_state = {
+            'status': 'in_progress',
             'timestamp': timestamp,
-            'logs': log_dir,
-            'result': None
-        })
+            'year': year,
+            'months': months,
+            'log_dir': str(log_dir),
+            'base_folder': str(base_folder),
+            'progress': {
+                'expected': 0,
+                'processed': 0,
+                'pdfs_downloaded': 0,
+                'errors': 0,
+                'total_size': 0,
+                'current_action': 'Inicializando...'
+            },
+            'result': None,
+            'start_time': datetime.now().isoformat()
+        }
 
-        # Función que corre en background
+        # Guardar estado en diccionario global
+        dian_processes[timestamp] = process_state
+
+        # Callback para actualizar progreso
+        def progress_callback(stats):
+            if timestamp in dian_processes:
+                dian_processes[timestamp]['progress'] = stats
+                # Guardar progreso en archivo para persistencia
+                progress_file = log_dir / 'progress.json'
+                with open(progress_file, 'w', encoding='utf-8') as f:
+                    json.dump(stats, f, ensure_ascii=False)
+
         def run_scraper():
             try:
+                # Crear scraper con callback de progreso
+                scraper = DIANScraperImproved(progress_callback=progress_callback)
                 all_docs = []
+
+                # Procesar cada mes
                 for m in months:
+                    progress_callback({
+                        **scraper.stats,
+                        'current_action': f'Procesando {year}/{m:02d}...'
+                    })
+
                     docs = scraper.scrape_month(year, m, download_docs=True)
+
+                    # Guardar documentos
                     for doc in docs:
-                        scraper.save_document(doc, base_folder, year, m)
-                    all_docs.extend(docs)
+                        # Crear una copia limpia del documento sin los objetos BeautifulSoup
+                        clean_doc = doc.copy()
+                        # Remover soup y content_div antes de guardar
+                        clean_doc.pop('soup', None)
+                        clean_doc.pop('content_div', None)
+
+                        # Guardar el documento
+                        scraper.save_document(doc, str(base_folder), year, m)
+
+                        # Agregar versión limpia a la lista
+                        all_docs.append(clean_doc)
+
+                # Calcular estadísticas finales
+                total_docs = len(all_docs)
+                total_pdfs = scraper.stats['pdfs_downloaded']
+                total_errors = scraper.stats['errors']
+                success_rate = ((total_docs - total_errors) / total_docs * 100) if total_docs > 0 else 0
 
                 # Generar manifiesto final
                 manifest = {
                     'timestamp': timestamp,
                     'year': year,
                     'months': months,
-                    'total_documents': len(all_docs),
-                    'status': 'completed'
+                    'total_documents': total_docs,
+                    'pdfs_downloaded': total_pdfs,
+                    'errors': total_errors,
+                    'success_rate': round(success_rate, 2),
+                    'total_size_mb': round(scraper.stats['total_size'] / (1024 * 1024), 2),
+                    'status': 'completed',
+                    'end_time': datetime.now().isoformat(),
+                    'duration_seconds': (
+                                datetime.now() - datetime.fromisoformat(process_state['start_time'])).total_seconds()
                 }
+
+                # Guardar manifiesto
                 with open(log_dir / 'manifest.json', 'w', encoding='utf-8') as f:
                     json.dump(manifest, f, ensure_ascii=False, indent=2)
 
-                dian_status['result'] = manifest
+                # Guardar lista detallada de documentos (ya están limpios)
+                with open(log_dir / 'documents.json', 'w', encoding='utf-8') as f:
+                    json.dump(all_docs, f, ensure_ascii=False, indent=2)
+
+                # Actualizar estado del proceso
+                dian_processes[timestamp]['status'] = 'completed'
+                dian_processes[timestamp]['result'] = manifest
 
             except Exception as e:
                 logger.error(f"Error en scraping DIAN: {e}", exc_info=True)
-                manifest = {'timestamp': timestamp, 'error': str(e), 'status': 'error'}
+
+                error_manifest = {
+                    'timestamp': timestamp,
+                    'error': str(e),
+                    'status': 'error',
+                    'end_time': datetime.now().isoformat()
+                }
+
                 with open(log_dir / 'manifest.json', 'w', encoding='utf-8') as f:
-                    json.dump(manifest, f, ensure_ascii=False, indent=2)
-                dian_status['result'] = manifest
+                    json.dump(error_manifest, f, ensure_ascii=False, indent=2)
+
+                dian_processes[timestamp]['status'] = 'error'
+                dian_processes[timestamp]['result'] = error_manifest
 
             finally:
-                dian_status['in_progress'] = False
                 logger.removeHandler(fh)
 
-        # Lanzar thread
-        thread = threading.Thread(target=run_scraper)
-        thread.daemon = True
+        # Lanzar thread para ejecutar el scraping
+        thread = threading.Thread(target=run_scraper, daemon=True)
         thread.start()
-        dian_status['thread'] = thread
 
         return jsonify({
             'status': 'started',
             'timestamp': timestamp,
             'log_dir': str(log_dir),
-            'descargas_dir': base_folder
+            'descargas_dir': str(base_folder),
+            'message': f'Proceso iniciado para {year} - {"Mes " + str(month) if month else "Todos los meses"}'
         })
 
     except Exception as e:
@@ -1409,17 +1476,22 @@ def dian_start_scraping():
 
 @app.route('/dian/status/<timestamp>')
 def dian_status_check(timestamp):
-    """Consultar estado del scraping de la DIAN"""
-    if dian_status.get('timestamp') != timestamp:
-        return jsonify({'status': 'not_found'}), 404
+    """Consultar estado del scraping con progreso detallado"""
+    if timestamp not in dian_processes:
+        return jsonify({'status': 'not_found', 'message': 'Proceso no encontrado'}), 404
 
-    if dian_status['in_progress']:
-        return jsonify({'status': 'in_progress'})
+    process = dian_processes[timestamp]
 
-    return jsonify({
-        'status': dian_status['result'].get('status', 'completed'),
-        'result': dian_status['result']
-    })
+    response = {
+        'status': process['status'],
+        'timestamp': timestamp,
+        'progress': process['progress']
+    }
+
+    if process['status'] in ['completed', 'error']:
+        response['result'] = process['result']
+
+    return jsonify(response)
 
 
 @app.route('/dian/download_manifest/<timestamp>')
@@ -1427,6 +1499,10 @@ def dian_download_manifest(timestamp):
     """Descargar manifiesto JSON del scraping"""
     try:
         manifest_path = Path(f"logs/dian_{timestamp}/manifest.json")
+
+        if not manifest_path.exists():
+            return jsonify({'error': 'Manifiesto no encontrado'}), 404
+
         return send_file(
             manifest_path,
             as_attachment=True,
@@ -1434,7 +1510,101 @@ def dian_download_manifest(timestamp):
             mimetype='application/json'
         )
     except Exception as e:
-        return str(e), 404
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/dian/view_logs/<timestamp>')
+def dian_view_logs(timestamp):
+    """Ver logs del proceso de scraping"""
+    try:
+        log_path = Path(f"logs/dian_{timestamp}/dian_scraping.log")
+
+        if not log_path.exists():
+            return "Logs no encontrados", 404
+
+        with open(log_path, 'r', encoding='utf-8') as f:
+            logs = f.read()
+
+        # Renderizar una página simple con los logs
+        return f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Logs DIAN - {timestamp}</title>
+            <style>
+                body {{
+                    font-family: monospace;
+                    background: #1e1e1e;
+                    color: #d4d4d4;
+                    padding: 20px;
+                }}
+                pre {{
+                    white-space: pre-wrap;
+                    word-wrap: break-word;
+                }}
+                .header {{
+                    background: #2d2d30;
+                    padding: 15px;
+                    margin-bottom: 20px;
+                    border-radius: 5px;
+                }}
+                h1 {{
+                    margin: 0;
+                    color: #4ec9b0;
+                }}
+                .log-content {{
+                    background: #2d2d30;
+                    padding: 20px;
+                    border-radius: 5px;
+                    max-height: 80vh;
+                    overflow-y: auto;
+                }}
+                .error {{ color: #f48771; }}
+                .warning {{ color: #dcdcaa; }}
+                .info {{ color: #4ec9b0; }}
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>Logs del Proceso DIAN</h1>
+                <p>Timestamp: {timestamp}</p>
+            </div>
+            <div class="log-content">
+                <pre>{logs}</pre>
+            </div>
+        </body>
+        </html>
+        """
+    except Exception as e:
+        return f"Error al leer logs: {str(e)}", 500
+
+
+@app.route('/dian/download_documents/<timestamp>')
+def dian_download_documents(timestamp):
+    """Descargar lista de documentos procesados"""
+    try:
+        docs_path = Path(f"logs/dian_{timestamp}/documents.json")
+
+        if not docs_path.exists():
+            return jsonify({'error': 'Documentos no encontrados'}), 404
+
+        return send_file(
+            docs_path,
+            as_attachment=True,
+            download_name=f'dian_documents_{timestamp}.json',
+            mimetype='application/json'
+        )
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/dian/cleanup/<timestamp>', methods=['POST'])
+def dian_cleanup(timestamp):
+    """Limpiar proceso completado de la memoria"""
+    if timestamp in dian_processes:
+        del dian_processes[timestamp]
+        return jsonify({'status': 'cleaned', 'message': 'Proceso removido de memoria'})
+    return jsonify({'status': 'not_found', 'message': 'Proceso no encontrado'}), 404
 
 
 
