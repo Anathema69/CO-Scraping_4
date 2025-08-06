@@ -428,82 +428,6 @@ async function selectAuthor(index) {
     await selectItem(index, 'autor');
 }
 
-
-
-async function startSearchEnhanced(searchData) {
-    console.log('startSearchEnhanced llamada con:', searchData);
-    searchInProgress = true;
-
-    // Deshabilitar botón de búsqueda
-    document.getElementById('searchButton').disabled = true;
-
-    try {
-        console.log('Enviando petición a /api/biblioteca_ccb/search');
-        const response = await fetch('/api/biblioteca_ccb/search', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(searchData)
-        });
-
-        console.log('Respuesta recibida:', response.status);
-        const result = await response.json();
-        console.log('Resultado:', result);
-
-        if (result.status === 'multiple_matches') {
-            // Mostrar modal de selección
-            console.log('Múltiples coincidencias encontradas:', result.matches);
-            searchInProgress = false;
-            showAuthorSelectionModal(result.matches, result.query);
-            showNotification(`Se encontraron ${result.matches.length} autores. Por favor seleccione uno.`, 'info');
-            return;
-        } else if (result.status === 'no_matches') {
-            // No se encontraron coincidencias
-            console.log('No se encontraron coincidencias');
-            searchInProgress = false;
-            document.getElementById('searchButton').disabled = false;
-            showNotification('No se encontraron autores con ese nombre', 'warning');
-            return;
-        } else if (!response.ok) {
-            console.error('Error en respuesta:', result);
-            throw new Error(result.error || `Error HTTP: ${response.status}`);
-        }
-
-        console.log('Iniciando búsqueda normal...');
-        const resultsPanel = document.getElementById('resultsPanel');
-        resultsPanel.style.display = 'block';
-        resultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-        // Resetear vista
-        document.getElementById('searchStatus').style.display = 'flex';
-        document.getElementById('statsGrid').style.display = 'grid';
-        document.getElementById('resultDetails').style.display = 'none';
-        document.getElementById('finalReport').style.display = 'none';
-
-        // Resetear estadísticas
-        updateStats({
-            expected: 0,
-            processed: 0,
-            downloaded: 0,
-            failed: 0
-        });
-
-        // Iniciar polling de progreso
-        progressInterval = setInterval(getSearchProgress, 2000);
-
-        // Esperar a que termine
-        checkSearchCompletion();
-
-    } catch (error) {
-        console.error('Error iniciando búsqueda:', error);
-        showNotification('Error al iniciar la búsqueda: ' + error.message, 'error');
-        searchInProgress = false;
-        document.getElementById('searchButton').disabled = false;
-        document.getElementById('searchStatus').style.display = 'none';
-    }
-}
-
 function showSearchingLoader(message = 'Buscando coincidencias...') {
     const loaderHTML = `
         <div id="searchingLoader" style="
@@ -580,6 +504,24 @@ function clearCurrentTabFields() {
 }
 
 function showSelectionModal(items, originalQuery, type = 'autor') {
+    // Validar que los items tengan la estructura correcta
+    console.log('showSelectionModal llamado con:', {
+        itemsLength: items.length,
+        type: type,
+        originalQuery: originalQuery,
+        primerItem: items[0]
+    });
+
+    // Filtrar items válidos
+    const validItems = items.filter(item => item && item.nombre);
+
+    if (validItems.length === 0) {
+        console.error('No hay items válidos para mostrar');
+        showNotification('Error: No se recibieron datos válidos del servidor', 'error');
+        closeSelectionModal();
+        return;
+    }
+
     let titleText, itemsText, iconClass;
 
     switch(type) {
@@ -607,13 +549,18 @@ function showSelectionModal(items, originalQuery, type = 'autor') {
                     <h3>${titleText}</h3>
                 </div>
                 <div class="modal-body">
-                    <p>Se encontraron ${items.length} ${itemsText} que coinciden con "<strong>${originalQuery}</strong>".</p>
+                    <p>Se encontraron ${validItems.length} ${itemsText} que coinciden con "<strong>${originalQuery}</strong>".</p>
                     <p>Por favor, seleccione ${type === 'materia' ? 'la materia específica' : 
                                              type === 'titulo' ? 'el título específico' : 
                                              'el autor específico'} que desea buscar:</p>
                     
                     <div class="item-list" style="max-height: 400px; overflow-y: auto; margin-top: 1rem;">
-                        ${items.map((item, index) => `
+                        ${validItems.map((item, index) => {
+                            // Validar cada item individualmente
+                            const itemName = item.nombre || 'Sin nombre';
+                            const itemCount = item.cantidad || 0;
+                            
+                            return `
                             <div class="selection-item" style="
                                 padding: 1rem;
                                 margin-bottom: 0.5rem;
@@ -627,7 +574,7 @@ function showSelectionModal(items, originalQuery, type = 'autor') {
                                 ${type === 'titulo' ? 'flex-direction: column; align-items: stretch;' : ''}
                             " onclick="selectItem(${index}, '${type}')">
                                 <div style="${type === 'titulo' ? 'margin-bottom: 0.5rem;' : ''}">
-                                    <strong style="${type === 'titulo' ? 'font-size: 0.95rem; line-height: 1.4;' : ''}">${item.nombre}</strong>
+                                    <strong style="${type === 'titulo' ? 'font-size: 0.95rem; line-height: 1.4;' : ''}">${itemName}</strong>
                                 </div>
                                 <div style="display: flex; align-items: center; gap: 0.5rem; ${type === 'titulo' ? 'align-self: flex-end;' : ''}">
                                     <span class="badge" style="
@@ -636,11 +583,11 @@ function showSelectionModal(items, originalQuery, type = 'autor') {
                                         padding: 0.25rem 0.75rem;
                                         border-radius: 20px;
                                         font-size: 0.875rem;
-                                    ">${item.cantidad} documento${item.cantidad !== 1 ? 's' : ''}</span>
+                                    ">${itemCount} documento${itemCount !== 1 ? 's' : ''}</span>
                                     <i class="fas fa-chevron-right" style="color: var(--text-secondary);"></i>
                                 </div>
                             </div>
-                        `).join('')}
+                        `}).join('')}
                     </div>
                 </div>
                 <div class="modal-actions">
@@ -680,8 +627,8 @@ function showSelectionModal(items, originalQuery, type = 'autor') {
     // Insertar modal en el DOM
     document.body.insertAdjacentHTML('beforeend', modalHTML);
 
-    // Guardar items en variable global
-    foundAuthors = items;
+     // Guardar items válidos en variable global
+    foundAuthors = validItems;
 }
 
 // Función para cerrar el modal de selección
@@ -725,8 +672,6 @@ async function selectItem(index, type = 'autor') {
     console.log(`Biblioteca CCB: Buscando con ${type} exacto:`, selectedItem.nombre);
     await startSearchEnhanced(searchData);
 }
-
-// Actualizar la función startSearchEnhanced para mostrar loader
 async function startSearchEnhanced(searchData) {
     console.log('startSearchEnhanced llamada con:', searchData);
     searchInProgress = true;
@@ -759,13 +704,27 @@ async function startSearchEnhanced(searchData) {
         hideSearchingLoader();
 
         if (result.status === 'multiple_matches') {
+			// Agregar este log para verificar qué datos están llegando
+			console.log('Datos de matches recibidos:', JSON.stringify(result.matches, null, 2));
+			console.log('Tipo de match:', result.type);
+
+
+			// Verificar que cada match tenga la estructura correcta
+			result.matches.forEach((match, index) => {
+				console.log(`Match ${index}:`, {
+					nombre: match.nombre,
+					cantidad: match.cantidad,
+					tieneNombre: !!match.nombre
+				});
+			});
+
             // Mostrar modal de selección
-            console.log('Múltiples coincidencias encontradas:', result.matches);
+			searchInProgress = false;
+			const matchType = result.type || searchData.filtro;
+			showSelectionModal(result.matches, result.query, matchType);
             searchInProgress = false;
 
-            // Determinar el tipo basado en el filtro o en la respuesta
-            const matchType = result.type || searchData.filtro;
-            showSelectionModal(result.matches, result.query, matchType);
+
 
             const itemText = matchType === 'materia' ? 'materias' : 'autores';
             showNotification(`Se encontraron ${result.matches.length} ${itemText}. Por favor seleccione uno.`, 'info');
@@ -821,3 +780,5 @@ async function startSearchEnhanced(searchData) {
         document.getElementById('searchStatus').style.display = 'none';
     }
 }
+
+

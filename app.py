@@ -2,28 +2,39 @@
 import threading
 import webbrowser
 import json
+import os
+import logging
+
+
 from flask import Flask, render_template, request, Response, jsonify, send_file
 from datetime import datetime
 from pathlib import Path
-import logging
+
 
 # Importar scrapers
 from scrapers.jurisprudencia.scraper import JudicialScraperV2
 from scrapers.tesauro.scraper import TesauroScraper
 from utils.form_helpers import build_search_params
-
-#Para la biblioteca nacional
-
-
+from scrapers.dian.scraper import DIANScraper
 from scrapers.biblioteca_ccb import BibliotecaCCBScraper
 from scrapers.biblioteca_ccb.ccb_scraper_patched import CCBArbitrajeScraper
-import os
+
 
 # Variable global para el estado del scraper
 biblioteca_ccb_status = {
     'in_progress': False,
     'scraper': None,
     'thread': None,
+    'result': None
+}
+
+# Estado global para DIAN
+dian_status = {
+    'in_progress': False,
+    'scraper': None,
+    'thread': None,
+    'timestamp': None,
+    'logs': None,
     'result': None
 }
 
@@ -808,11 +819,16 @@ def serve_logs(system, timestamp, filename):
     """Servir archivos de log de cualquier sistema"""
     try:
         if system == 'jurisprudencia':
-            log_file = Path(f"logs/{timestamp}/{filename}")
+            log_file = Path(f"logs/jurisprudencia_{timestamp}/{filename}")
+
         elif system == 'tesauro':
             log_file = Path(f"logs/tesauro_{timestamp}/{filename}")
+
         elif system == 'consejo_estado':
              log_file = Path(f"logs/consejo_estado_{timestamp}/{filename}")
+
+        elif system == 'dian':
+            log_file = Path(f"logs/dian_{timestamp}/{filename}")
         else:
             return "Sistema no válido", 400
 
@@ -1043,24 +1059,28 @@ def biblioteca_ccb_search():
                 app.logger.info(f"Biblioteca CCB: Buscando coincidencias parciales para título: {title_filter}")
                 matches = temp_scraper.search_titles_by_partial_name(title_filter)
 
+                # Agregar log para verificar los matches
+                app.logger.info(f"Matches encontrados: {matches}")
+
                 if not matches:
                     return jsonify({
                         'status': 'no_matches',
                         'error': f'No se encontraron títulos para: {title_filter}'
                     }), 404
                 elif len(matches) > 1:
+                    # Verificar que cada match tenga la estructura correcta
+                    for i, match in enumerate(matches):
+                        if not match.get('nombre'):
+                            app.logger.warning(f"Match {i} sin nombre: {match}")
+
                     # Múltiples coincidencias, el usuario debe elegir
                     app.logger.info(f"Biblioteca CCB: {len(matches)} coincidencias encontradas")
                     return jsonify({
                         'status': 'multiple_matches',
                         'matches': matches,
                         'query': title_filter,
-                        'type': 'titulo'  # Indicar el tipo para el frontend
+                        'type': 'titulo'  # Asegurarse de que el tipo esté presente
                     })
-                else:
-                    # Una sola coincidencia, usar ese título
-                    title_filter = matches[0]['nombre']
-                    app.logger.info(f"Biblioteca CCB: Una coincidencia encontrada, usando: {title_filter}")
             else:
                 # Usar el título exacto
                 title_filter = exact_title
@@ -1292,6 +1312,131 @@ def biblioteca_ccb_stats():
             'stats': {}
         }), 500
 
+# ================
+# RUTAS DE LA DIAN
+# ================
+
+@app.route('/dian/start_scraping', methods=['POST'])
+def dian_start_scraping():
+    """Iniciar proceso de scraping de la DIAN"""
+    try:
+        # Obtener año y mes (si no se envía mes, se procesan todos)
+        year = request.form.get('year', '').strip()
+        month = request.form.get('month', '').strip()
+        if not year:
+            return jsonify({'status': 'error', 'message': 'El año es requerido'}), 400
+        year = int(year)
+        months = [int(month)] if month else list(range(1, 13))
+
+        # Timestamp único para este run
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+
+        # Directorio de logs
+        log_dir = Path(f"logs/dian_{timestamp}")
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        # Configurar logging a archivo
+        fh = logging.FileHandler(log_dir / 'dian_scraping.log')
+        fh.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(fh)
+
+        # Carpeta raíz de descargas
+        base_folder = 'descargas_dian'
+        Path(base_folder).mkdir(exist_ok=True)
+
+        # Crear instancia del scraper
+        scraper = DIANScraper()
+        dian_status.update({
+            'in_progress': True,
+            'scraper': scraper,
+            'thread': None,
+            'timestamp': timestamp,
+            'logs': log_dir,
+            'result': None
+        })
+
+        # Función que corre en background
+        def run_scraper():
+            try:
+                all_docs = []
+                for m in months:
+                    docs = scraper.scrape_month(year, m, download_docs=True)
+                    for doc in docs:
+                        scraper.save_document(doc, base_folder, year, m)
+                    all_docs.extend(docs)
+
+                # Generar manifiesto final
+                manifest = {
+                    'timestamp': timestamp,
+                    'year': year,
+                    'months': months,
+                    'total_documents': len(all_docs),
+                    'status': 'completed'
+                }
+                with open(log_dir / 'manifest.json', 'w', encoding='utf-8') as f:
+                    json.dump(manifest, f, ensure_ascii=False, indent=2)
+
+                dian_status['result'] = manifest
+
+            except Exception as e:
+                logger.error(f"Error en scraping DIAN: {e}", exc_info=True)
+                manifest = {'timestamp': timestamp, 'error': str(e), 'status': 'error'}
+                with open(log_dir / 'manifest.json', 'w', encoding='utf-8') as f:
+                    json.dump(manifest, f, ensure_ascii=False, indent=2)
+                dian_status['result'] = manifest
+
+            finally:
+                dian_status['in_progress'] = False
+                logger.removeHandler(fh)
+
+        # Lanzar thread
+        thread = threading.Thread(target=run_scraper)
+        thread.daemon = True
+        thread.start()
+        dian_status['thread'] = thread
+
+        return jsonify({
+            'status': 'started',
+            'timestamp': timestamp,
+            'log_dir': str(log_dir),
+            'descargas_dir': base_folder
+        })
+
+    except Exception as e:
+        logger.error(f"Error iniciando scraping DIAN: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/dian/status/<timestamp>')
+def dian_status_check(timestamp):
+    """Consultar estado del scraping de la DIAN"""
+    if dian_status.get('timestamp') != timestamp:
+        return jsonify({'status': 'not_found'}), 404
+
+    if dian_status['in_progress']:
+        return jsonify({'status': 'in_progress'})
+
+    return jsonify({
+        'status': dian_status['result'].get('status', 'completed'),
+        'result': dian_status['result']
+    })
+
+
+@app.route('/dian/download_manifest/<timestamp>')
+def dian_download_manifest(timestamp):
+    """Descargar manifiesto JSON del scraping"""
+    try:
+        manifest_path = Path(f"logs/dian_{timestamp}/manifest.json")
+        return send_file(
+            manifest_path,
+            as_attachment=True,
+            download_name=f'dian_manifest_{timestamp}.json',
+            mimetype='application/json'
+        )
+    except Exception as e:
+        return str(e), 404
+
+
 
 
 @app.route('/jurisprudencia')
@@ -1326,6 +1471,8 @@ if __name__ == '__main__':
     Path('templates/jurisprudencia').mkdir(parents=True, exist_ok=True)
     Path('templates/tesauro').mkdir(parents=True, exist_ok=True)
     Path('templates/consejo_estado').mkdir(parents=True, exist_ok=True)
+    Path('descargas_dian').mkdir(exist_ok=True)
+    Path('templates/dian').mkdir(parents=True, exist_ok=True)
 
 
 
