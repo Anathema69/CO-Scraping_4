@@ -31,15 +31,16 @@ class DIANScraperImproved:
         # Atributos para tracking de progreso
         self.progress_callback = progress_callback
         self.stats = {
-            'expected': 0,  # Se actualizará dinámicamente
+            'expected': 0,  # Iniciar en 0, se actualizará cuando se sepa
             'processed': 0,
             'pdfs_downloaded': 0,
             'errors': 0,
             'total_size': 0,
-            'current_action': 'Inicializando...',
+            'current_action': 'Analizando contenido...',
             'documents': []  # Lista de documentos procesados (sin objetos BeautifulSoup)
         }
         self.lock = threading.Lock()
+        self.max_retries = 3  # Número máximo de reintentos
 
     def update_progress(self, **kwargs):
         """Actualizar estadísticas de progreso de forma thread-safe"""
@@ -123,7 +124,7 @@ class DIANScraperImproved:
 
                             try:
                                 self.update_progress(
-                                    current_action=f"Procesando docuementos de {year}/{month_str}"
+                                    current_action=f"Procesando documento {i}/{len(doc_links)}: {link_info.get('numero', 'Sin número')}"
                                 )
 
                                 doc_data = self.process_document(link_info['url'])
@@ -135,9 +136,17 @@ class DIANScraperImproved:
                                     # Crear versión limpia del documento para stats
                                     clean_doc = {k: v for k, v in doc_data.items()
                                                  if k not in ['soup', 'content_div']}
+                                    clean_doc['status'] = 'descargado'  # Estado exitoso
                                     self.stats['documents'].append(clean_doc)
 
-                                    #self.update_progress(processed=self.stats['processed'] + 1)
+                                    self.update_progress(processed=self.stats['processed'] + 1)
+                                else:
+                                    # Documento con error
+                                    error_doc = link_info.copy()
+                                    error_doc['status'] = 'error'
+                                    error_doc['error_message'] = 'No se pudo procesar el documento'
+                                    self.stats['documents'].append(error_doc)
+                                    self.update_progress(errors=self.stats['errors'] + 1)
 
                                 time.sleep(1)
                             except Exception as e:
@@ -234,22 +243,34 @@ class DIANScraperImproved:
         return documents
 
     def process_document(self, doc_url: str) -> Optional[Dict]:
-        """Procesar un documento individual"""
-        try:
-            response = self.session.get(doc_url, timeout=30)
-            if response.status_code != 200:
-                logger.error(f"Error HTTP {response.status_code} al obtener {doc_url}")
+        """Procesar un documento individual con reintentos"""
+        for attempt in range(self.max_retries):
+            try:
+                response = self.session.get(doc_url, timeout=30)
+                if response.status_code != 200:
+                    if attempt < self.max_retries - 1:
+                        logger.warning(f"Error HTTP {response.status_code}, intento {attempt + 1}/{self.max_retries}")
+                        time.sleep(2)  # Esperar antes de reintentar
+                        continue
+                    logger.error(
+                        f"Error HTTP {response.status_code} al obtener {doc_url} después de {self.max_retries} intentos")
+                    return None
+
+                soup = BeautifulSoup(response.text, 'html.parser')
+                doc_info = self.extract_document_info(soup, doc_url)
+                doc_info['soup'] = soup
+                doc_info['status'] = 'success'  # Agregar estado de éxito
+                return doc_info
+
+            except Exception as e:
+                if attempt < self.max_retries - 1:
+                    logger.warning(f"Error procesando documento (intento {attempt + 1}/{self.max_retries}): {e}")
+                    time.sleep(2)
+                    continue
+                logger.error(f"Error procesando documento {doc_url} después de {self.max_retries} intentos: {e}")
                 return None
 
-            soup = BeautifulSoup(response.text, 'html.parser')
-            doc_info = self.extract_document_info(soup, doc_url)
-            doc_info['soup'] = soup
-
-            return doc_info
-
-        except Exception as e:
-            logger.error(f"Error procesando documento {doc_url}: {e}")
-            return None
+        return None
 
     def extract_document_info(self, soup: BeautifulSoup, url: str) -> Dict:
         """Extraer información detallada del documento"""
@@ -503,41 +524,53 @@ class DIANScraperImproved:
             self.update_progress(errors=self.stats['errors'] + 1)
 
     def download_pdf(self, pdf_url: str, folder: str, filename: str) -> bool:
-        """Descargar PDF con tracking de tamaño"""
-        try:
-            if not filename.endswith('.pdf'):
-                filename = filename + '.pdf'
+        """Descargar PDF con reintentos y tracking de tamaño"""
+        if not filename.endswith('.pdf'):
+            filename = filename + '.pdf'
 
-            filepath = os.path.join(folder, filename)
+        filepath = os.path.join(folder, filename)
 
-            if os.path.exists(filepath):
-                logger.debug(f"PDF ya existe: {filename}")
-                return True
+        if os.path.exists(filepath):
+            logger.debug(f"PDF ya existe: {filename}")
+            return True
 
-            response = self.session.get(pdf_url, stream=True, timeout=60)
-            if response.status_code == 200:
-                file_size = int(response.headers.get('content-length', 0))
+        for attempt in range(self.max_retries):
+            try:
+                response = self.session.get(pdf_url, stream=True, timeout=60)
+                if response.status_code == 200:
+                    file_size = int(response.headers.get('content-length', 0))
 
-                with open(filepath, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
+                    with open(filepath, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
 
-                # Actualizar estadísticas
-                self.update_progress(
-                    pdfs_downloaded=self.stats['pdfs_downloaded'] + 1,
-                    total_size=self.stats['total_size'] + file_size,
-                    current_action=f"PDF descargado: {os.path.basename(filename)}"
-                )
+                    # Actualizar estadísticas
+                    self.update_progress(
+                        pdfs_downloaded=self.stats['pdfs_downloaded'] + 1,
+                        total_size=self.stats['total_size'] + file_size,
+                        current_action=f"PDF descargado: {os.path.basename(filename)}"
+                    )
 
-                logger.info(f"  PDF descargado: {filename}")
-                return True
-            else:
-                logger.warning(f"  Error HTTP {response.status_code} descargando PDF")
+                    logger.info(f"  PDF descargado: {filename}")
+                    return True
+                else:
+                    if attempt < self.max_retries - 1:
+                        logger.warning(f"Error HTTP {response.status_code}, reintentando...")
+                        time.sleep(2)
+                        continue
+                    logger.warning(
+                        f"  Error HTTP {response.status_code} descargando PDF después de {self.max_retries} intentos")
+                    self.update_progress(errors=self.stats['errors'] + 1)
+                    return False
+
+            except Exception as e:
+                if attempt < self.max_retries - 1:
+                    logger.warning(f"Error descargando PDF (intento {attempt + 1}/{self.max_retries}): {e}")
+                    time.sleep(2)
+                    continue
+                logger.error(f"  Error descargando PDF después de {self.max_retries} intentos: {e}")
                 self.update_progress(errors=self.stats['errors'] + 1)
                 return False
 
-        except Exception as e:
-            logger.error(f"  Error descargando PDF: {e}")
-            self.update_progress(errors=self.stats['errors'] + 1)
-            return False
+        return False

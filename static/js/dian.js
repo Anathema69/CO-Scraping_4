@@ -29,6 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const finalReport = document.getElementById('finalReport');
 
   // Referencias a elementos de estadísticas
+  const expectedCard = document.getElementById('expectedCard');
   const expectedDocs = document.getElementById('expectedDocs');
   const processedDocs = document.getElementById('processedDocs');
   const downloadedPdfs = document.getElementById('downloadedPdfs');
@@ -43,8 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const finalDownloaded = document.getElementById('finalDownloaded');
   const finalErrors = document.getElementById('finalErrors');
   const successRate = document.getElementById('successRate');
-  const downloadManifest = document.getElementById('downloadManifest');
-  const viewLogs = document.getElementById('viewLogs');
+  const downloadCSV = document.getElementById('downloadCSV');
   const newSearch = document.getElementById('newSearch');
 
   // Variables de estado
@@ -72,8 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
     resetBtn.addEventListener('click', resetForm);
     searchBtn.addEventListener('click', startScraping);
     newSearch.addEventListener('click', resetAll);
-    downloadManifest.addEventListener('click', downloadManifestFile);
-    viewLogs.addEventListener('click', viewLogsFile);
+    downloadCSV.addEventListener('click', downloadCSVFile);
   }
 
   function handleYearChange() {
@@ -223,6 +222,12 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateStats(progress) {
+    // Mostrar card de documentos esperados solo si hay un valor mayor a 0
+    if (progress.expected && progress.expected > 0) {
+      expectedCard.style.display = 'block';
+      animateNumber(expectedDocs, progress.expected);
+    }
+
     // Actualizar números con animación
     animateNumber(processedDocs, progress.processed || 0);
     animateNumber(downloadedPdfs, progress.pdfs_downloaded || 0);
@@ -257,8 +262,7 @@ document.addEventListener('DOMContentLoaded', () => {
     successRate.textContent = `${rate}%`;
 
     // Guardar timestamp para descargas
-    downloadManifest.dataset.timestamp = currentTimestamp;
-    viewLogs.dataset.timestamp = currentTimestamp;
+    downloadCSV.dataset.timestamp = currentTimestamp;
   }
 
   function startDurationCounter() {
@@ -307,18 +311,10 @@ document.addEventListener('DOMContentLoaded', () => {
     return mb.toFixed(2) + ' MB';
   }
 
-  async function downloadManifestFile() {
-    const timestamp = downloadManifest.dataset.timestamp;
+  async function downloadCSVFile() {
+    const timestamp = downloadCSV.dataset.timestamp;
     if (!timestamp) return;
 
-    window.location.href = `/dian/download_manifest/${timestamp}`;
-  }
-
-  async function viewLogsFile() {
-    const timestamp = viewLogs.dataset.timestamp;
-    if (!timestamp) return;
-
-    // Abrir logs en nueva ventana o implementar visor de logs
-    window.open(`/dian/view_logs/${timestamp}`, '_blank');
+    window.location.href = `/dian/download_csv/${timestamp}`;
   }
 });

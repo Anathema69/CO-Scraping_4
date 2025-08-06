@@ -292,7 +292,7 @@
     </div>
 
     <div class="stats-grid">
-      <div class="stat-card">
+      <div class="stat-card" id="expectedCard" style="display: none;">
         <div class="stat-number" id="expectedDocs">0</div>
         <div class="stat-label">DOCUMENTOS ESPERADOS</div>
       </div>
@@ -357,17 +357,13 @@
     </div>
 
     <div class="action-buttons">
-      <button class="btn-download-report" id="downloadManifest">
-        <i class="fas fa-download"></i>
-        Descargar Manifiesto JSON
-      </button>
-      <button class="btn-download-report" id="viewLogs">
-        <i class="fas fa-file-medical-alt"></i>
-        Ver Logs Detallados
-      </button>
       <button class="btn-download-report" id="newSearch">
         <i class="fas fa-redo"></i>
         Nueva Búsqueda
+      </button>
+      <button class="btn-download-report" id="downloadCSV">
+        <i class="fas fa-file-csv"></i>
+        Descargar CSV
       </button>
     </div>
   </div>

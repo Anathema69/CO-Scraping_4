@@ -1598,6 +1598,77 @@ def dian_download_documents(timestamp):
         return jsonify({'error': str(e)}), 500
 
 
+# Agregar esta ruta en app.py después de las otras rutas DIAN
+
+@app.route('/dian/download_csv/<timestamp>')
+def dian_download_csv(timestamp):
+    """Generar y descargar CSV con los documentos procesados"""
+    import csv
+    from io import StringIO
+    from flask import make_response
+
+    try:
+        # Buscar el archivo documents.json
+        docs_path = Path(f"logs/dian_{timestamp}/documents.json")
+
+        if not docs_path.exists():
+            return jsonify({'error': 'Documentos no encontrados'}), 404
+
+        # Leer documentos
+        with open(docs_path, 'r', encoding='utf-8') as f:
+            documents = json.load(f)
+
+        if not documents:
+            return jsonify({'error': 'No hay documentos para exportar'}), 404
+
+        # Crear CSV en memoria
+        output = StringIO()
+
+        # Definir columnas para el CSV
+        fieldnames = [
+            'numero',
+            'tipo',
+            'fecha',
+            'tema',
+            'descriptor',
+            'url',
+            'archivos_pdf',
+            'status',
+            'error_message'
+        ]
+
+        writer = csv.DictWriter(output, fieldnames=fieldnames, delimiter=';', quoting=csv.QUOTE_ALL)
+        writer.writeheader()
+
+        # Escribir cada documento
+        for doc in documents:
+            # Preparar fila
+            row = {
+                'numero': doc.get('numero', ''),
+                'tipo': doc.get('tipo', doc.get('tipo_norma', '')),
+                'fecha': doc.get('fecha', ''),
+                'tema': doc.get('tema', ''),
+                'descriptor': doc.get('descriptor', ''),
+                'url': doc.get('url', ''),
+                'archivos_pdf': len(doc.get('archivos', [])),
+                'status': doc.get('status', 'desconocido'),
+                'error_message': doc.get('error_message', '')
+            }
+            writer.writerow(row)
+
+        # Preparar respuesta
+        output.seek(0)
+        response = make_response(output.getvalue())
+        response.headers["Content-Disposition"] = f"attachment; filename=dian_documentos_{timestamp}.csv"
+        response.headers["Content-type"] = "text/csv; charset=utf-8"
+
+        return response
+
+    except Exception as e:
+        logger.error(f"Error generando CSV: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/dian/cleanup/<timestamp>', methods=['POST'])
 def dian_cleanup(timestamp):
     """Limpiar proceso completado de la memoria"""
