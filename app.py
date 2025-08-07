@@ -4,6 +4,7 @@ import webbrowser
 import json
 import os
 import logging
+import sys
 
 
 from flask import Flask, render_template, request, Response, jsonify, send_file
@@ -15,10 +16,63 @@ from pathlib import Path
 from scrapers.jurisprudencia.scraper import JudicialScraperV2
 from scrapers.tesauro.scraper import TesauroScraper
 from utils.form_helpers import build_search_params
-from scrapers.dian.scraper import DIANScraperImproved
 from scrapers.biblioteca_ccb import BibliotecaCCBScraper
-from scrapers.biblioteca_ccb.ccb_scraper_patched import CCBArbitrajeScraper
 
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Asegurar que los paths estén correctos
+current_dir = Path(__file__).parent
+sys.path.insert(0, str(current_dir))
+
+# Importar scrapers con manejo robusto de errores
+scrapers_available = {}
+
+# Importar scraper DIAN moderno
+try:
+    from scrapers.dian.scraper import DIANScraperImproved
+
+    scrapers_available['dian_modern'] = True
+    logger.info("✓ Scraper DIAN moderno cargado")
+except ImportError as e:
+    logger.error(f"✗ Error cargando scraper DIAN moderno: {e}")
+    scrapers_available['dian_modern'] = False
+    DIANScraperImproved = None
+
+# Importar scraper DIAN legacy
+try:
+    from scrapers.dian.scraper_dian_legacy_improved import DIANLegacyImprovedScraper
+
+    scrapers_available['dian_legacy'] = True
+    logger.info("✓ Scraper DIAN legacy cargado")
+except ImportError as e:
+    logger.error(f"✗ Error cargando scraper DIAN legacy: {e}")
+    scrapers_available['dian_legacy'] = False
+    DIANLegacyImprovedScraper = None
+
+
+# Función helper para verificar disponibilidad de scrapers
+def check_dian_scrapers():
+    """Verifica qué scrapers DIAN están disponibles"""
+    if not scrapers_available.get('dian_modern') and not scrapers_available.get('dian_legacy'):
+        raise ImportError("Ningún scraper DIAN está disponible. Verifica la instalación.")
+
+    if not scrapers_available.get('dian_legacy'):
+        logger.warning("Scraper DIAN legacy no disponible. Solo años 2010+ funcionarán.")
+
+    if not scrapers_available.get('dian_modern'):
+        logger.warning("Scraper DIAN moderno no disponible. Solo años 2001-2009 funcionarán.")
+
+    return scrapers_available
+
+
+# Verificar al inicio
+try:
+    available_scrapers = check_dian_scrapers()
+    logger.info(f"Scrapers DIAN disponibles: {available_scrapers}")
+except ImportError as e:
+    logger.error(f"Error crítico con scrapers DIAN: {e}")
 
 # Variable global para el estado del scraper
 biblioteca_ccb_status = {
@@ -1312,9 +1366,18 @@ def dian_page():
     return render_template('dian/filters.html')
 
 
+# Modificaciones para app.py - Integración de scrapers DIAN
+
+# Agregar estos imports al inicio del archivo app.py
+from scrapers.dian.scraper import DIANScraperImproved
+from scrapers.dian.scraper_dian_legacy_improved import DIANLegacyImprovedScraper
+
+
+# Reemplazar la función dian_start_scraping completa con esta versión mejorada:
+
 @app.route('/dian/start_scraping', methods=['POST'])
 def dian_start_scraping():
-    """Iniciar proceso de scraping de la DIAN con tracking mejorado"""
+    """Iniciar proceso de scraping de la DIAN - Con verificación de scrapers disponibles"""
     try:
         # Obtener año y mes
         year = request.form.get('year', '').strip()
@@ -1325,6 +1388,22 @@ def dian_start_scraping():
 
         year = int(year)
         months = [int(month)] if month else list(range(1, 13))
+
+        # Verificar disponibilidad del scraper necesario
+        if year <= 2009:
+            if not scrapers_available.get('dian_legacy', False) or DIANLegacyImprovedScraper is None:
+                return jsonify({
+                    'status': 'error',
+                    'message': f'El scraper para años históricos (2001-2009) no está disponible. '
+                              f'Verifica que el archivo scraper_dian_legacy_improved.py esté en scrapers/dian/'
+                }), 503
+        else:
+            if not scrapers_available.get('dian_modern', False) or DIANScraperImproved is None:
+                return jsonify({
+                    'status': 'error',
+                    'message': f'El scraper para años modernos (2010+) no está disponible. '
+                              f'Verifica que el archivo scraper.py esté en scrapers/dian/'
+                }), 503
 
         # Timestamp único para este proceso
         timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
@@ -1339,9 +1418,9 @@ def dian_start_scraping():
         # Configurar logging
         fh = logging.FileHandler(log_dir / 'dian_scraping.log')
         fh.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-        logger = logging.getLogger('DIANScraper')
-        logger.addHandler(fh)
-        logger.setLevel(logging.INFO)
+        logger_dian = logging.getLogger('DIANScraper')
+        logger_dian.addHandler(fh)
+        logger_dian.setLevel(logging.INFO)
 
         # Estructura para almacenar el estado del proceso
         process_state = {
@@ -1349,6 +1428,7 @@ def dian_start_scraping():
             'timestamp': timestamp,
             'year': year,
             'months': months,
+            'scraper_type': 'legacy' if year <= 2009 else 'modern',
             'log_dir': str(log_dir),
             'base_folder': str(base_folder),
             'progress': {
@@ -1357,7 +1437,8 @@ def dian_start_scraping():
                 'pdfs_downloaded': 0,
                 'errors': 0,
                 'total_size': 0,
-                'current_action': 'Inicializando...'
+                'current_action': 'Inicializando...',
+                'documents': []
             },
             'result': None,
             'start_time': datetime.now().isoformat()
@@ -1369,82 +1450,213 @@ def dian_start_scraping():
         # Callback para actualizar progreso
         def progress_callback(stats):
             if timestamp in dian_processes:
-                dian_processes[timestamp]['progress'] = stats
-                # Guardar progreso en archivo para persistencia
-                progress_file = log_dir / 'progress.json'
-                with open(progress_file, 'w', encoding='utf-8') as f:
-                    json.dump(stats, f, ensure_ascii=False)
+                if isinstance(stats, dict):
+                    dian_processes[timestamp]['progress'].update(stats)
+                    # Guardar progreso en archivo para persistencia
+                    progress_file = log_dir / 'progress.json'
+                    with open(progress_file, 'w', encoding='utf-8') as f:
+                        # Crear una copia limpia sin objetos no serializables
+                        clean_stats = {}
+                        for key, value in stats.items():
+                            if key == 'documents':
+                                clean_docs = []
+                                for doc in value:
+                                    if isinstance(doc, dict):
+                                        clean_doc = {k: v for k, v in doc.items()
+                                                   if k not in ['soup', 'content_div', 'content_html']}
+                                        clean_docs.append(clean_doc)
+                                clean_stats[key] = clean_docs
+                            else:
+                                clean_stats[key] = value
+                        json.dump(clean_stats, f, ensure_ascii=False)
 
         def run_scraper():
             try:
-                # Crear scraper con callback de progreso
-                scraper = DIANScraperImproved(progress_callback=progress_callback)
                 all_docs = []
 
-                # Procesar cada mes
-                for m in months:
+                # DECISIÓN CLAVE: Usar scraper según el año
+                if year <= 2009:
+                    # Usar scraper legacy para años 2001-2009
+                    logger_dian.info(f"Usando scraper LEGACY para el año {year}")
+
+                    # Verificación adicional
+                    if DIANLegacyImprovedScraper is None:
+                        raise ImportError("Scraper legacy no está disponible")
+
+                    # Crear instancia del scraper legacy
+                    scraper = DIANLegacyImprovedScraper(progress_callback=progress_callback)
+
+                    # Actualizar progreso inicial
                     progress_callback({
-                        **scraper.stats,
-                        'current_action': f'Procesando {year}/{m:02d}...'
+                        'current_action': f'Procesando año {year} (sistema legacy)...',
+                        'expected': len(months) * 50  # Estimación inicial
                     })
 
-                    docs = scraper.scrape_month(year, m, download_docs=True)
+                    # Procesar cada mes con el scraper legacy
+                    for m in months:
+                        try:
+                            progress_callback({
+                                'current_action': f'Analizando {year}/{m:02d} (legacy)...'
+                            })
 
-                    # Guardar documentos
-                    for doc in docs:
-                        # Crear una copia limpia del documento sin los objetos BeautifulSoup
-                        clean_doc = doc.copy()
-                        # Remover soup y content_div antes de guardar
-                        clean_doc.pop('soup', None)
-                        clean_doc.pop('content_div', None)
+                            # Obtener documentos del mes
+                            docs = scraper.scrape_month(year, m)
 
-                        # Guardar el documento
-                        scraper.save_document(doc, str(base_folder), year, m)
+                            if docs:
+                                logger_dian.info(f"Encontrados {len(docs)} documentos en {year}/{m:02d}")
 
-                        # Agregar versión limpia a la lista
-                        all_docs.append(clean_doc)
+                                # Guardar documentos con contenido completo
+                                saved_docs = scraper.save_documents(
+                                    docs,
+                                    str(base_folder),
+                                    year,
+                                    m,
+                                    download_full_content=True,
+                                    max_documents=None
+                                )
 
-                # Calcular estadísticas finales
+                                # Agregar a la lista total
+                                all_docs.extend(saved_docs)
+
+                                # Actualizar progreso
+                                progress_callback({
+                                    'processed': len(all_docs),
+                                    'downloaded': len([d for d in all_docs if d.get('content_downloaded')]),
+                                    'current_action': f'Procesados {len(all_docs)} documentos hasta ahora...'
+                                })
+                            else:
+                                logger_dian.info(f"No se encontraron documentos en {year}/{m:02d}")
+
+                        except Exception as e:
+                            logger_dian.error(f"Error procesando {year}/{m:02d}: {e}")
+                            progress_callback({
+                                'errors': scraper.stats.get('errors', 0) + 1,
+                                'current_action': f'Error en {year}/{m:02d}: {str(e)}'
+                            })
+
+                    # Obtener estadísticas finales del scraper legacy
+                    final_stats = scraper.stats
+
+                else:
+                    # Usar scraper moderno para años 2010+
+                    logger_dian.info(f"Usando scraper MODERNO para el año {year}")
+
+                    # Verificación adicional
+                    if DIANScraperImproved is None:
+                        raise ImportError("Scraper moderno no está disponible")
+
+                    # Crear scraper moderno con callback de progreso
+                    scraper = DIANScraperImproved(progress_callback=progress_callback)
+
+                    # Actualizar progreso inicial
+                    progress_callback({
+                        'current_action': f'Procesando año {year} (sistema moderno)...',
+                        'expected': len(months) * 10
+                    })
+
+                    # Procesar cada mes con el scraper moderno
+                    for m in months:
+                        try:
+                            progress_callback({
+                                'current_action': f'Procesando {year}/{m:02d} (moderno)...'
+                            })
+
+                            docs = scraper.scrape_month(year, m, download_docs=True)
+
+                            # Guardar documentos
+                            for doc in docs:
+                                # Crear una copia limpia del documento
+                                clean_doc = doc.copy()
+                                clean_doc.pop('soup', None)
+                                clean_doc.pop('content_div', None)
+
+                                # Guardar el documento
+                                scraper.save_document(doc, str(base_folder), year, m)
+
+                                # Agregar versión limpia a la lista
+                                all_docs.append(clean_doc)
+
+                        except Exception as e:
+                            logger_dian.error(f"Error procesando {year}/{m:02d}: {e}")
+                            progress_callback({
+                                'errors': scraper.stats.get('errors', 0) + 1,
+                                'current_action': f'Error en {year}/{m:02d}: {str(e)}'
+                            })
+
+                    # Obtener estadísticas finales del scraper moderno
+                    final_stats = scraper.stats
+
+                # Calcular estadísticas finales unificadas
                 total_docs = len(all_docs)
-                total_pdfs = scraper.stats['pdfs_downloaded']
-                total_errors = scraper.stats['errors']
+
+                # Para el scraper legacy, contar documentos con contenido descargado
+                if year <= 2009:
+                    total_pdfs = len([d for d in all_docs if d.get('content_downloaded')])
+                    total_errors = final_stats.get('errors', 0)
+                    total_size = 0  # El scraper legacy no rastrea tamaño
+                else:
+                    # Para el scraper moderno, usar las estadísticas directas
+                    total_pdfs = final_stats.get('pdfs_downloaded', 0)
+                    total_errors = final_stats.get('errors', 0)
+                    total_size = final_stats.get('total_size', 0)
+
                 success_rate = ((total_docs - total_errors) / total_docs * 100) if total_docs > 0 else 0
 
-                # Generar manifiesto final
+                # Generar manifiesto final unificado
                 manifest = {
                     'timestamp': timestamp,
                     'year': year,
                     'months': months,
+                    'scraper_type': 'legacy' if year <= 2009 else 'modern',
                     'total_documents': total_docs,
                     'pdfs_downloaded': total_pdfs,
                     'errors': total_errors,
                     'success_rate': round(success_rate, 2),
-                    'total_size_mb': round(scraper.stats['total_size'] / (1024 * 1024), 2),
+                    'total_size_mb': round(total_size / (1024 * 1024), 2) if total_size > 0 else 0,
                     'status': 'completed',
                     'end_time': datetime.now().isoformat(),
-                    'duration_seconds': (
-                                datetime.now() - datetime.fromisoformat(process_state['start_time'])).total_seconds()
+                    'duration_seconds': (datetime.now() - datetime.fromisoformat(process_state['start_time'])).total_seconds()
                 }
 
                 # Guardar manifiesto
                 with open(log_dir / 'manifest.json', 'w', encoding='utf-8') as f:
                     json.dump(manifest, f, ensure_ascii=False, indent=2)
 
-                # Guardar lista detallada de documentos (ya están limpios)
+                # Guardar lista detallada de documentos
                 with open(log_dir / 'documents.json', 'w', encoding='utf-8') as f:
-                    json.dump(all_docs, f, ensure_ascii=False, indent=2)
+                    # Limpiar documentos antes de guardar
+                    clean_docs = []
+                    for doc in all_docs:
+                        if isinstance(doc, dict):
+                            clean_doc = {k: v for k, v in doc.items()
+                                       if k not in ['soup', 'content_div', 'content_html']}
+                            clean_docs.append(clean_doc)
+                    json.dump(clean_docs, f, ensure_ascii=False, indent=2)
 
                 # Actualizar estado del proceso
                 dian_processes[timestamp]['status'] = 'completed'
                 dian_processes[timestamp]['result'] = manifest
 
-            except Exception as e:
-                logger.error(f"Error en scraping DIAN: {e}", exc_info=True)
+                # Actualización final de progreso
+                progress_callback({
+                    'processed': total_docs,
+                    'downloaded': total_pdfs,
+                    'errors': total_errors,
+                    'current_action': 'Proceso completado exitosamente',
+                    'expected': total_docs
+                })
+
+                logger_dian.info(f"Proceso completado: {total_docs} documentos procesados")
+
+            except ImportError as e:
+                error_msg = f"Error de importación: {e}"
+                logger_dian.error(error_msg)
 
                 error_manifest = {
                     'timestamp': timestamp,
-                    'error': str(e),
+                    'error': error_msg,
                     'status': 'error',
+                    'scraper_type': 'legacy' if year <= 2009 else 'modern',
                     'end_time': datetime.now().isoformat()
                 }
 
@@ -1454,19 +1666,45 @@ def dian_start_scraping():
                 dian_processes[timestamp]['status'] = 'error'
                 dian_processes[timestamp]['result'] = error_manifest
 
+            except Exception as e:
+                logger_dian.error(f"Error en scraping DIAN: {e}", exc_info=True)
+
+                error_manifest = {
+                    'timestamp': timestamp,
+                    'error': str(e),
+                    'status': 'error',
+                    'scraper_type': 'legacy' if year <= 2009 else 'modern',
+                    'end_time': datetime.now().isoformat()
+                }
+
+                with open(log_dir / 'manifest.json', 'w', encoding='utf-8') as f:
+                    json.dump(error_manifest, f, ensure_ascii=False, indent=2)
+
+                dian_processes[timestamp]['status'] = 'error'
+                dian_processes[timestamp]['result'] = error_manifest
+
+                progress_callback({
+                    'current_action': f'Error: {str(e)}',
+                    'errors': dian_processes[timestamp]['progress'].get('errors', 0) + 1
+                })
+
             finally:
-                logger.removeHandler(fh)
+                logger_dian.removeHandler(fh)
 
         # Lanzar thread para ejecutar el scraping
         thread = threading.Thread(target=run_scraper, daemon=True)
         thread.start()
+
+        # Mensaje personalizado según el tipo de scraper
+        scraper_info = "sistema legacy (2001-2009)" if year <= 2009 else "sistema moderno (2010+)"
 
         return jsonify({
             'status': 'started',
             'timestamp': timestamp,
             'log_dir': str(log_dir),
             'descargas_dir': str(base_folder),
-            'message': f'Proceso iniciado para {year} - {"Mes " + str(month) if month else "Todos los meses"}'
+            'scraper_type': 'legacy' if year <= 2009 else 'modern',
+            'message': f'Proceso iniciado para {year} usando {scraper_info} - {"Mes " + str(month) if month else "Todos los meses"}'
         })
 
     except Exception as e:

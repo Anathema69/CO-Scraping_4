@@ -16,10 +16,9 @@ import logging
 import json
 from pathlib import Path
 
-# Importar los helpers
-from content_extractor import ContentExtractor
-from html_formatter import HTMLFormatter
-from encoding_fixer import EncodingFixer
+from .content_extractor import ContentExtractor
+from .html_formatter import HTMLFormatter
+from .encoding_fixer import EncodingFixer
 
 logger = logging.getLogger(__name__)
 
@@ -81,9 +80,14 @@ class DIANLegacyImprovedScraper:
         if year == 2001:
             url_primary = f"https://cijuf.org.co/codian01/{month_name}.htm"
             url_alt = f"https://cijuf.org.co/codian01/{month_name}.html"
-        else:
+        elif year <= 2004:
+            # Años 2002-2004 usan .htm
             url_primary = f"https://cijuf.org.co/codian{year_suffix:0>2}/{month_name}i{year_suffix:0>2}.htm"
             url_alt = f"https://cijuf.org.co/codian{year_suffix:0>2}/{month_name}i{year_suffix:0>2}.html"
+        else:
+            # Años 2005-2009 usan .html
+            url_primary = f"https://cijuf.org.co/codian{year_suffix:0>2}/{month_name}i{year_suffix:0>2}.html"
+            url_alt = f"https://cijuf.org.co/codian{year_suffix:0>2}/{month_name}i{year_suffix:0>2}.htm"
 
         return url_primary, url_alt
 
@@ -122,7 +126,7 @@ class DIANLegacyImprovedScraper:
         # Basado en el análisis, el método text_reference es el más efectivo
 
         # 1. Buscar todas las referencias a archivos .htm en el contenido completo
-        file_pattern = r'\b([co])(\d{3,5})\.htm\b'
+        file_pattern = r'\b([co])(\d{3,5})\.html?\b'  # Acepta tanto .htm como .html
         file_matches = re.findall(file_pattern, html_content, re.IGNORECASE)
 
         for tipo_letra, numero in file_matches:
@@ -130,8 +134,12 @@ class DIANLegacyImprovedScraper:
             if len(numero) >= 3 and numero not in seen_numbers:
                 seen_numbers.add(numero)
 
-                # Construir información del documento
-                filename = f"{tipo_letra.lower()}{numero}.htm"
+
+                # Construir información del documento con extensión correcta según el año
+                if year <= 2004:
+                    filename = f"{tipo_letra.lower()}{numero}.htm"
+                else:
+                    filename = f"{tipo_letra.lower()}{numero}.html"
                 doc_url = self._build_document_url(filename, year, month)
 
                 doc_info = {
@@ -230,10 +238,14 @@ class DIANLegacyImprovedScraper:
         year_suffix = str(year)[2:]
         month_name = self.meses[month]
 
+        # Para todos los años (2001-2009), la estructura es:
+        # https://cijuf.org.co/codianXX/mes/archivo.htm(l)
         if year == 2001:
-            return f"https://cijuf.org.co/codian01/{month_name}/{href}"
+            base_url = f"https://cijuf.org.co/codian01/{month_name}"
         else:
-            return f"https://cijuf.org.co/codian{year_suffix:0>2}/{href}"
+            base_url = f"https://cijuf.org.co/codian{year_suffix:0>2}/{month_name}"
+
+        return f"{base_url}/{href}"
 
     def _extract_document_info_from_link(self, link_element, year: int, month: int) -> Optional[Dict]:
         """Extraer información de un enlace usando lógica mejorada"""
@@ -440,8 +452,12 @@ class DIANLegacyImprovedScraper:
                     if numero not in seen_numbers:
                         seen_numbers.add(numero)
 
-                        # Asumir que es concepto por defecto
-                        filename = f"c{numero}.htm"
+
+                        # Asumir que es concepto por defecto con extensión correcta
+                        if year <= 2004:
+                            filename = f"c{numero}.htm"
+                        else:
+                            filename = f"c{numero}.html"
                         doc_url = self._build_document_url(filename, year, month)
 
                         documents.append({

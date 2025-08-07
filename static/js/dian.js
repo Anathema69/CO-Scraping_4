@@ -1,7 +1,7 @@
-// static/js/dian_improved.js
+// static/js/dian_improved.js - Actualizado para soportar ambos scrapers
 document.addEventListener('DOMContentLoaded', () => {
   // --- Configuración ---
-  const YEAR_START = 2006;
+  const YEAR_START = 2001;  // Cambiado de 2006 a 2001 para incluir años legacy
   const CURRENT_YEAR = new Date().getFullYear();
   const MONTHS = [
     { value: '01', name: 'Enero' },
@@ -52,6 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let statusInterval = null;
   let durationInterval = null;
   let startTime = null;
+  let currentScraperType = null;
 
   // --- Inicialización ---
   populateYears();
@@ -61,7 +62,13 @@ document.addEventListener('DOMContentLoaded', () => {
     for (let y = CURRENT_YEAR; y >= YEAR_START; y--) {
       const opt = document.createElement('option');
       opt.value = y;
-      opt.textContent = y;
+      // Añadir indicador visual para años legacy
+      if (y <= 2009) {
+        opt.textContent = `${y} (archivo histórico)`;
+        opt.className = 'legacy-year';
+      } else {
+        opt.textContent = y;
+      }
       yearSel.appendChild(opt);
     }
   }
@@ -80,7 +87,8 @@ document.addEventListener('DOMContentLoaded', () => {
     monthSel.disabled = !yearSel.value;
 
     if (yearSel.value) {
-      const maxMonth = yearSel.value == CURRENT_YEAR
+      const year = parseInt(yearSel.value);
+      const maxMonth = year == CURRENT_YEAR
         ? new Date().getMonth() + 1
         : 12;
 
@@ -92,8 +100,53 @@ document.addEventListener('DOMContentLoaded', () => {
           monthSel.appendChild(option);
         }
       });
+
+      // Mostrar aviso para años legacy
+      if (year <= 2009) {
+        showLegacyNotice();
+      } else {
+        hideLegacyNotice();
+      }
     }
     updatePreview();
+  }
+
+  function showLegacyNotice() {
+    // Buscar o crear el aviso
+    let notice = document.getElementById('legacyNotice');
+    if (!notice) {
+      notice = document.createElement('div');
+      notice.id = 'legacyNotice';
+      notice.className = 'legacy-notice';
+      notice.innerHTML = `
+        <i class="fas fa-info-circle"></i>
+        <span>Los años 2001-2009 utilizan el sistema de archivo histórico. 
+        El procesamiento puede tomar más tiempo debido a la estructura diferente de los documentos.</span>
+      `;
+      notice.style.cssText = `
+        background: #fff3cd;
+        border: 1px solid #ffc107;
+        color: #856404;
+        padding: 12px;
+        border-radius: 6px;
+        margin: 15px 0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      `;
+
+      // Insertar después del selector de mes
+      const formContainer = monthSel.parentElement.parentElement;
+      formContainer.appendChild(notice);
+    }
+    notice.style.display = 'flex';
+  }
+
+  function hideLegacyNotice() {
+    const notice = document.getElementById('legacyNotice');
+    if (notice) {
+      notice.style.display = 'none';
+    }
   }
 
   function updatePreview() {
@@ -103,13 +156,21 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    const year = parseInt(yearSel.value);
     const monthName = monthSel.value
       ? MONTHS.find(m => m.value === monthSel.value).name
       : null;
 
-    const text = monthName
-      ? `${monthName} de ${yearSel.value}`
-      : `Todos los meses de ${yearSel.value}`;
+    let text = monthName
+      ? `${monthName} de ${year}`
+      : `Todos los meses de ${year}`;
+
+    // Añadir indicador de sistema
+    if (year <= 2009) {
+      text += ' (Sistema Legacy)';
+    } else {
+      text += ' (Sistema Moderno)';
+    }
 
     previewText.textContent = text;
     previewDiv.style.display = 'flex';
@@ -122,6 +183,7 @@ document.addEventListener('DOMContentLoaded', () => {
     monthSel.disabled = true;
     previewDiv.style.display = 'none';
     searchBtn.disabled = true;
+    hideLegacyNotice();
   }
 
   function resetAll() {
@@ -147,6 +209,9 @@ document.addEventListener('DOMContentLoaded', () => {
       alert('Por favor seleccione un año');
       return;
     }
+
+    const year = parseInt(yearSel.value);
+    currentScraperType = year <= 2009 ? 'legacy' : 'modern';
 
     // Preparar datos para enviar
     const formData = new FormData();
@@ -180,15 +245,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (data.status === 'started') {
         currentTimestamp = data.timestamp;
-        statusText.textContent = 'Procesando...';
 
-        // Calcular documentos esperados (estimación)
+        // Actualizar texto de estado con información del scraper
+        const scraperInfo = data.scraper_type === 'legacy'
+          ? 'Sistema Legacy (2001-2009)'
+          : 'Sistema Moderno (2010+)';
+
+        statusText.textContent = `Procesando con ${scraperInfo}...`;
+
+        // Calcular documentos esperados según el tipo de scraper
         const monthCount = monthSel.value ? 1 : 12;
-        const estimatedDocs = monthCount * 8; // Estimación basada en promedio
+        // Los años legacy suelen tener más documentos
+        const docsPerMonth = year <= 2009 ? 50 : 10;
+        const estimatedDocs = monthCount * docsPerMonth;
+
         expectedDocs.textContent = estimatedDocs;
+        expectedCard.style.display = 'block';
 
         // Iniciar polling del estado
         statusInterval = setInterval(checkStatus, 2000); // Verificar cada 2 segundos
+
+        // Mostrar mensaje informativo
+        showProgressMessage(data.message);
       } else {
         throw new Error(data.message || 'Error al iniciar el proceso');
       }
@@ -198,6 +276,25 @@ document.addEventListener('DOMContentLoaded', () => {
       progressPanel.style.display = 'none';
       clearIntervals();
     }
+  }
+
+  function showProgressMessage(message) {
+    // Crear o actualizar mensaje de progreso
+    let messageDiv = document.getElementById('progressMessage');
+    if (!messageDiv) {
+      messageDiv = document.createElement('div');
+      messageDiv.id = 'progressMessage';
+      messageDiv.style.cssText = `
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        padding: 10px;
+        margin-top: 15px;
+        text-align: center;
+        font-size: 14px;
+      `;
+      progressPanel.querySelector('.progress-info').appendChild(messageDiv);
+    }
+    messageDiv.textContent = message;
   }
 
   async function checkStatus() {
@@ -230,18 +327,72 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Actualizar números con animación
     animateNumber(processedDocs, progress.processed || 0);
-    animateNumber(downloadedPdfs, progress.pdfs_downloaded || 0);
+
+    // Para el scraper legacy, el campo "downloaded" representa documentos con contenido
+    if (currentScraperType === 'legacy') {
+      animateNumber(downloadedPdfs, progress.downloaded || 0);
+    } else {
+      animateNumber(downloadedPdfs, progress.pdfs_downloaded || 0);
+    }
+
     animateNumber(errorCount, progress.errors || 0);
 
-    // Actualizar tamaño total
-    if (progress.total_size) {
+    // Actualizar tamaño total (solo para scraper moderno)
+    if (progress.total_size && currentScraperType === 'modern') {
       totalSize.textContent = formatFileSize(progress.total_size);
+    } else if (currentScraperType === 'legacy') {
+      // Para legacy, mostrar N/A o contar documentos
+      totalSize.textContent = 'N/A';
     }
 
     // Actualizar estado del texto
     if (progress.current_action) {
       statusText.textContent = progress.current_action;
     }
+
+    // Actualizar barra de progreso visual si existe
+    updateProgressBar(progress);
+  }
+
+  function updateProgressBar(progress) {
+    // Crear barra de progreso si no existe
+    let progressBar = document.getElementById('visualProgressBar');
+    if (!progressBar) {
+      const container = document.createElement('div');
+      container.style.cssText = `
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+        height: 30px;
+        margin: 20px 0;
+        overflow: hidden;
+        position: relative;
+      `;
+
+      progressBar = document.createElement('div');
+      progressBar.id = 'visualProgressBar';
+      progressBar.style.cssText = `
+        background: linear-gradient(90deg, #4ade80 0%, #22c55e 100%);
+        height: 100%;
+        width: 0%;
+        transition: width 0.5s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: bold;
+      `;
+
+      container.appendChild(progressBar);
+      progressPanel.querySelector('.stats-grid').after(container);
+    }
+
+    // Calcular porcentaje
+    const expected = progress.expected || 0;
+    const processed = progress.processed || 0;
+    const percentage = expected > 0 ? Math.min(100, (processed / expected) * 100) : 0;
+
+    progressBar.style.width = `${percentage}%`;
+    progressBar.textContent = `${Math.round(percentage)}%`;
   }
 
   function showFinalReport(data) {
@@ -260,6 +411,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const errors = result.errors || 0;
     const rate = total > 0 ? ((total - errors) / total * 100).toFixed(2) : 0;
     successRate.textContent = `${rate}%`;
+
+    // Mostrar información adicional del scraper usado
+    if (result.scraper_type) {
+      const scraperTypeDiv = document.createElement('div');
+      scraperTypeDiv.style.cssText = `
+        text-align: center;
+        margin-top: 15px;
+        font-size: 14px;
+        opacity: 0.9;
+      `;
+      scraperTypeDiv.textContent = `Procesado con: ${
+        result.scraper_type === 'legacy' 
+          ? 'Sistema Legacy (2001-2009)' 
+          : 'Sistema Moderno (2010+)'
+      }`;
+      finalReport.querySelector('.report-stats').after(scraperTypeDiv);
+    }
 
     // Guardar timestamp para descargas
     downloadCSV.dataset.timestamp = currentTimestamp;
@@ -280,6 +448,17 @@ document.addEventListener('DOMContentLoaded', () => {
     totalSize.textContent = '0 MB';
     duration.textContent = '0s';
     statusText.textContent = 'Inicializando...';
+
+    // Limpiar elementos adicionales
+    const progressMessage = document.getElementById('progressMessage');
+    if (progressMessage) {
+      progressMessage.remove();
+    }
+
+    const progressBar = document.getElementById('visualProgressBar');
+    if (progressBar && progressBar.parentElement) {
+      progressBar.parentElement.remove();
+    }
   }
 
   function animateNumber(element, newValue) {
